@@ -14,6 +14,7 @@ Real-time refresh updates,
 Clean dark mode UI.
 
 Planned Features:
+
 GPU monitoring,
 Temperature sensors,
 System uptime,
@@ -25,6 +26,7 @@ Discord/webhook alerts,
 Export system logs.
 
 Built With:
+
 Python,
 psutil,
 CustomTkinter,
