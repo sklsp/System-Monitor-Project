@@ -1,5 +1,10 @@
 import sys
+import subprocess
 import psutil
+try:
+    import GPUtil
+except ModuleNotFoundError:
+    GPUtil = None
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QProgressBar, QTabWidget
@@ -19,6 +24,7 @@ class SystemMonitor(QMainWindow):
         self.cpu_history = []
         self.memory_history = []
         self.max_history = 60
+        self.prev_disk_io = psutil.disk_io_counters()
         
         self.init_ui()
         
@@ -102,11 +108,29 @@ class SystemMonitor(QMainWindow):
         """)
         layout.addWidget(self.memory_bar, 3, 0, 1, 2)
         
-        # Disk Info
-        layout.addWidget(QLabel("Disk Usage"), 4, 0)
+        # GPU Info
+        layout.addWidget(QLabel("GPU Usage"), 4, 0)
+        self.gpu_label = QLabel("N/A")
+        self.gpu_label.setFont(QFont("Arial", 16, QFont.Bold))
+        layout.addWidget(self.gpu_label, 4, 1)
+        
+        self.gpu_bar = QProgressBar()
+        self.gpu_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #555;
+                border-radius: 5px;
+                background-color: #3b3b3b;
+                height: 25px;
+            }
+            QProgressBar::chunk { background-color: #9C27B0; }
+        """)
+        layout.addWidget(self.gpu_bar, 5, 0, 1, 2)
+        
+        # Disk Write Info
+        layout.addWidget(QLabel("Disk Writing"), 6, 0)
         self.disk_label = QLabel("0%")
         self.disk_label.setFont(QFont("Arial", 16, QFont.Bold))
-        layout.addWidget(self.disk_label, 4, 1)
+        layout.addWidget(self.disk_label, 6, 1)
         
         self.disk_bar = QProgressBar()
         self.disk_bar.setStyleSheet("""
@@ -118,13 +142,13 @@ class SystemMonitor(QMainWindow):
             }
             QProgressBar::chunk { background-color: #FF9800; }
         """)
-        layout.addWidget(self.disk_bar, 5, 0, 1, 2)
+        layout.addWidget(self.disk_bar, 7, 0, 1, 2)
         
-        # GPU/Process Info
-        layout.addWidget(QLabel("Process Count"), 6, 0)
+        # Process Info
+        layout.addWidget(QLabel("Process Count"), 8, 0)
         self.process_label = QLabel("0")
         self.process_label.setFont(QFont("Arial", 16, QFont.Bold))
-        layout.addWidget(self.process_label, 6, 1)
+        layout.addWidget(self.process_label, 8, 1)
         
         widget.setLayout(layout)
         return widget
@@ -158,13 +182,24 @@ class SystemMonitor(QMainWindow):
         self.disk_free_label = QLabel()
         layout.addWidget(self.disk_free_label, 5, 1)
         
+        # GPU Details
+        layout.addWidget(QLabel("GPU Info:"), 6, 0)
+        self.gpu_name_label = QLabel()
+        layout.addWidget(self.gpu_name_label, 6, 1)
+        
+        self.gpu_load_label = QLabel()
+        layout.addWidget(self.gpu_load_label, 7, 1)
+        
+        self.gpu_mem_label = QLabel()
+        layout.addWidget(self.gpu_mem_label, 8, 1)
+        
         # Network Details
-        layout.addWidget(QLabel("Network Info:"), 6, 0)
+        layout.addWidget(QLabel("Network Info:"), 9, 0)
         self.network_sent_label = QLabel()
-        layout.addWidget(self.network_sent_label, 6, 1)
+        layout.addWidget(self.network_sent_label, 9, 1)
         
         self.network_recv_label = QLabel()
-        layout.addWidget(self.network_recv_label, 7, 1)
+        layout.addWidget(self.network_recv_label, 10, 1)
         
         widget.setLayout(layout)
         return widget
@@ -192,17 +227,74 @@ class SystemMonitor(QMainWindow):
         self.memory_total_label.setText(f"Total: {total_gb:.2f} GB")
         self.memory_available_label.setText(f"Used: {used_gb:.2f} GB / Available: {available_gb:.2f} GB")
         
-        # Disk
-        disk = psutil.disk_usage('/')
-        disk_percent = disk.percent
-        self.disk_label.setText(f"{disk_percent}%")
-        self.disk_bar.setValue(int(disk_percent))
+        # Disk write percent
+        disk_io = psutil.disk_io_counters()
+        write_bytes_delta = 0
+        if self.prev_disk_io:
+            write_bytes_delta = disk_io.write_bytes - self.prev_disk_io.write_bytes
+        self.prev_disk_io = disk_io
+        write_mbps = write_bytes_delta / (1024 ** 2)
+        max_write_mbps = 10.0  # 10 MB/s maps to 100%
+        disk_write_percent = int(min(max((write_mbps / max_write_mbps) * 100, 0), 100))
+        self.disk_label.setText(f"{disk_write_percent}%")
+        self.disk_bar.setValue(disk_write_percent)
+        self.disk_bar.setFormat(f"{write_mbps:.2f} MB/s")
         
+        disk = psutil.disk_usage('/')
         total_gb = disk.total / (1024**3)
         used_gb = disk.used / (1024**3)
         free_gb = disk.free / (1024**3)
         self.disk_total_label.setText(f"Total: {total_gb:.2f} GB")
         self.disk_free_label.setText(f"Used: {used_gb:.2f} GB / Free: {free_gb:.2f} GB")
+        
+        # GPU
+        gpu_shown = False
+        if GPUtil is not None:
+            try:
+                gpus = GPUtil.getGPUs()
+                if gpus:
+                    gpu = gpus[0]
+                    gpu_load = gpu.load * 100
+                    gpu_mem = gpu.memoryUtil * 100
+                    self.gpu_label.setText(f"{gpu_load:.0f}%")
+                    self.gpu_bar.setValue(int(gpu_load))
+                    self.gpu_bar.setFormat(f"{gpu_mem:.0f}% mem")
+                    self.gpu_name_label.setText(f"{gpu.name}")
+                    self.gpu_load_label.setText(f"Load: {gpu_load:.0f}%")
+                    self.gpu_mem_label.setText(f"Memory: {gpu.memoryUsed:.0f} MiB / {gpu.memoryTotal:.0f} MiB")
+                    gpu_shown = True
+            except Exception:
+                pass
+        if not gpu_shown:
+            try:
+                proc = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=name,utilization.gpu,utilization.memory,memory.used,memory.total", "--format=csv,noheader,nounits"],
+                    capture_output=True,
+                    text=True,
+                    timeout=1,
+                )
+                if proc.returncode == 0 and proc.stdout.strip():
+                    fields = [f.strip() for f in proc.stdout.split(',')]
+                    if len(fields) >= 5:
+                        name, load, mem_util, mem_used, mem_total = fields[:5]
+                        gpu_load = float(load)
+                        gpu_mem = float(mem_util)
+                        self.gpu_label.setText(f"{gpu_load:.0f}%")
+                        self.gpu_bar.setValue(int(gpu_load))
+                        self.gpu_bar.setFormat(f"{gpu_mem:.0f}% mem")
+                        self.gpu_name_label.setText(name)
+                        self.gpu_load_label.setText(f"Load: {gpu_load:.0f}%")
+                        self.gpu_mem_label.setText(f"Memory: {mem_used} MiB / {mem_total} MiB")
+                        gpu_shown = True
+            except Exception:
+                pass
+        if not gpu_shown:
+            self.gpu_label.setText("N/A")
+            self.gpu_bar.setValue(0)
+            self.gpu_bar.setFormat("No GPU")
+            self.gpu_name_label.setText("GPU info unavailable")
+            self.gpu_load_label.setText("")
+            self.gpu_mem_label.setText("")
         
         # Processes
         process_count = len(psutil.pids())
