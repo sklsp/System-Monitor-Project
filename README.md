@@ -1,38 +1,32 @@
-A modern real-time system monitoring dashboard built with Python.
-This project displays live hardware and system statistics such as CPU, RAM, disk usage, network activity, and more through a clean desktop interface.
+System Monitor
 
-Features:
+Run the Qt-based system monitor GUI.
 
+Quick start (Windows, using the workspace virtualenv):
 
-Current Features:
+1. Activate your venv (PowerShell):
 
-Live CPU usage monitoring,
-RAM usage tracking,
-Disk usage statistics,
-Current processes,
-Real-time refresh updates,
-Clean dark mode UI.
+```powershell
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
 
-Planned Features:
+2. Run the app headless for a quick startup test (no display required):
 
-GPU monitoring,
-Temperature sensors,
-System uptime,
-Network speed monitor,
-Process manager,
-FPS tracking,
-Performance graphs,
-Discord/webhook alerts,
-Export system logs.
+```powershell
+# make sure Qt can run offscreen
+$env:QT_QPA_PLATFORM='offscreen'
+.venv\Scripts\python.exe tests\run_headless.py
+```
 
-Built With:
+3. To run the full GUI (requires display):
 
-Python,
-psutil,
-CustomTkinter,
-Matplotlib.
+```powershell
+.venv\Scripts\python.exe main.py
+```
 
-
-Author:
-
-Made by sklsp
+Files of interest:
+- `main.py` — launcher
+- `ui/dashboard.py` — UI implementation
+- `ui/graphs.py` — fallback graph widget
+- `monitoring/net.py`, `monitoring/disk.py` — monitoring helpersA modern real-time system monitoring dashboard built with Python.
