@@ -128,8 +128,7 @@ System-Monitor-Project/
 │
 ├── main.py                 # Application entry point
 ├── requirements.txt        # Dependencies
-├── about.txt               # Project description
-├── README.md               # Documentation
+├── README.md               # Project description
 │
 ├── ui/
 │   ├── dashboard.py        # Main UI implementation
@@ -144,8 +143,7 @@ System-Monitor-Project/
 ├── tests/
 │   └── run_headless.py
 │
-└── assets/
-    └── screenshots/
+└── __pycache__
 ```
 
 ---
