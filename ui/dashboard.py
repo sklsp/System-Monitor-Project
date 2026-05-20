@@ -1,6 +1,13 @@
 import sys
 import subprocess
 import psutil
+from pathlib import Path
+
+if __package__ is None:
+    project_root = Path(__file__).resolve().parents[1]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
 try:
     import GPUtil
 except ModuleNotFoundError:
@@ -9,14 +16,14 @@ except ModuleNotFoundError:
 try:
     from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis
     QT_CHARTS_AVAILABLE = True
-except Exception:
+except ImportError:
     QT_CHARTS_AVAILABLE = False
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QGridLayout, QLabel, QProgressBar, QTabWidget
 )
 from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtGui import QFont, QPainter, QColor
+from PyQt5.QtGui import QFont, QPainter, QColor, QPen
 
 from monitoring.net import get_active_network_interface, get_interface_speed
 from monitoring.disk import get_disk_busy_percent
@@ -83,21 +90,33 @@ class SystemMonitor(QMainWindow):
             return GraphWidget(), None, None
 
         series = QLineSeries()
+        pen = QPen(QColor(color))
+        pen.setWidth(2)
+        series.setPen(pen)
+        series.setPointsVisible(True)
+
         chart = QChart()
         chart.addSeries(series)
         chart.setTitle(title)
         chart.legend().hide()
+        chart.setBackgroundBrush(QColor("#2b2b2b"))
+        chart.setBackgroundVisible(True)
+        chart.setTitleBrush(QColor("#ffffff"))
 
         axis_x = QValueAxis()
         axis_x.setLabelFormat("%d")
         axis_x.setRange(0, self.max_history)
         axis_x.setTickCount(6)
         axis_x.setTitleText("Seconds")
+        axis_x.setLabelsBrush(QColor("#ffffff"))
+        axis_x.setLinePenColor(QColor("#ffffff"))
 
         axis_y = QValueAxis()
         axis_y.setRange(0, 100)
         axis_y.setTickCount(5)
         axis_y.setTitleText("%")
+        axis_y.setLabelsBrush(QColor("#ffffff"))
+        axis_y.setLinePenColor(QColor("#ffffff"))
 
         chart.addAxis(axis_x, Qt.AlignBottom)
         chart.addAxis(axis_y, Qt.AlignLeft)
@@ -122,6 +141,12 @@ class SystemMonitor(QMainWindow):
             series.clear()
             for i, value in enumerate(history):
                 series.append(i, value)
+            try:
+                chart = series.chart()
+                if chart is not None:
+                    chart.update()
+            except Exception:
+                pass
         except Exception:
             return
 
@@ -414,7 +439,7 @@ class SystemMonitor(QMainWindow):
         self.cpu_label.setText(f"{cpu_percent}%")
         self.cpu_history.append(cpu_percent)
         self.cpu_history = self.cpu_history[-self.max_history:]
-        self.update_series(self.cpu_chart_view, self.cpu_history)
+        self.update_series(self.cpu_series if self.cpu_series is not None else self.cpu_chart_view, self.cpu_history)
         if hasattr(self, 'cpu_bar'):
             self.cpu_bar.setValue(int(cpu_percent))
 
@@ -435,7 +460,7 @@ class SystemMonitor(QMainWindow):
         self.memory_label.setText(f"{memory_percent}%")
         self.memory_history.append(memory_percent)
         self.memory_history = self.memory_history[-self.max_history:]
-        self.update_series(self.memory_chart_view, self.memory_history)
+        self.update_series(self.memory_series if self.memory_series is not None else self.memory_chart_view, self.memory_history)
         if hasattr(self, 'memory_bar'):
             self.memory_bar.setValue(int(memory_percent))
         
@@ -470,7 +495,7 @@ class SystemMonitor(QMainWindow):
         self.disk_label.setText(f"{disk_write_percent}%")
         self.disk_history.append(disk_write_percent)
         self.disk_history = self.disk_history[-self.max_history:]
-        self.update_series(self.disk_chart_view, self.disk_history)
+        self.update_series(self.disk_series if self.disk_series is not None else self.disk_chart_view, self.disk_history)
         if hasattr(self, 'disk_bar'):
             self.disk_bar.setValue(disk_write_percent)
             self.disk_bar.setFormat(f"{disk_write_percent}% ({total_mbps:.2f} MB/s)")
@@ -500,7 +525,7 @@ class SystemMonitor(QMainWindow):
         self.eth_label.setText(f"{eth_percent}%")
         self.eth_history.append(eth_percent)
         self.eth_history = self.eth_history[-self.max_history:]
-        self.update_series(self.eth_chart_view, self.eth_history)
+        self.update_series(self.eth_series if self.eth_series is not None else self.eth_chart_view, self.eth_history)
         if hasattr(self, 'eth_bar'):
             self.eth_bar.setValue(eth_percent)
             self.eth_bar.setFormat(f"{eth_percent}% (↑{eth_send_mbps:.1f} Mb/s ↓{eth_recv_mbps:.1f} Mb/s)")
@@ -581,7 +606,7 @@ class SystemMonitor(QMainWindow):
 
         self.gpu_history.append(gpu_load)
         self.gpu_history = self.gpu_history[-self.max_history:]
-        self.update_series(self.gpu_chart_view, self.gpu_history)
+        self.update_series(self.gpu_series if self.gpu_series is not None else self.gpu_chart_view, self.gpu_history)
         
         # Processes
         process_count = len(psutil.pids())
