@@ -1,12 +1,23 @@
 import sys
 import subprocess
+import threading
 import psutil
 from pathlib import Path
 
-if __package__ is None:
+# Ensure the project root is on sys.path so local packages can be imported
+project_root = Path(__file__).resolve().parents[1]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+try:
+    from monitoring.net import get_active_network_interface, get_interface_speed
+    from monitoring.disk import get_disk_busy_percent
+except ModuleNotFoundError:
     project_root = Path(__file__).resolve().parents[1]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
+    from monitoring.net import get_active_network_interface, get_interface_speed
+    from monitoring.disk import get_disk_busy_percent
 
 try:
     import GPUtil
@@ -20,13 +31,11 @@ except ImportError:
     QT_CHARTS_AVAILABLE = False
 
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QGridLayout, QLabel, QProgressBar, QTabWidget
+    QMainWindow, QWidget, QVBoxLayout, QGridLayout, QLabel, QProgressBar, QTabWidget, QPushButton, QScrollArea
 )
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QFont, QPainter, QColor, QPen
 
-from monitoring.net import get_active_network_interface, get_interface_speed
-from monitoring.disk import get_disk_busy_percent
 from ui.graphs import GraphWidget
 
 
@@ -43,23 +52,37 @@ class SystemMonitor(QMainWindow):
         self.gpu_history = []
         self.disk_history = []
         self.eth_history = []
-        self.max_history = 60
+        self.cpu_freq_history = []
+        self.cpu_temp_history = []
+        self.max_history = 30
         self.prev_disk_io = psutil.disk_io_counters()
         self.prev_net_io = psutil.net_io_counters(pernic=True)
         self.network_interface = get_active_network_interface()
+        self.last_cpu_temp_readings = []
+        self.last_gpu_data = None
+        self.cpu_temp_fallback_complete = False
+        self.cpu_temp_thread = None
+        self.slow_update_counter = 0
+        self.slow_update_frequency = 10
+        psutil.cpu_percent(interval=None)
 
         self.init_ui()
+        self.start_cpu_temp_background_refresh()
 
         # Timer for updating info
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_system_info)
-        self.timer.start(1000)
+        self.timer.start(2500)
 
     def init_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        main_layout = QVBoxLayout()
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+
+        content_widget = QWidget()
+        main_layout = QVBoxLayout(content_widget)
 
         title = QLabel("System Monitor")
         title_font = QFont()
@@ -70,6 +93,7 @@ class SystemMonitor(QMainWindow):
         main_layout.addWidget(title)
 
         tabs = QTabWidget()
+        self.main_tabs = tabs
         tabs.setStyleSheet("""
             QTabWidget::pane { border: 1px solid #555; }
             QTabBar::tab { background-color: #3b3b3b; color: #fff; padding: 8px 20px; }
@@ -83,52 +107,22 @@ class SystemMonitor(QMainWindow):
         tabs.addTab(details_widget, "Details")
 
         main_layout.addWidget(tabs)
-        central_widget.setLayout(main_layout)
+        scroll_area.setWidget(content_widget)
 
-    def create_chart(self, title, color):
-        if not QT_CHARTS_AVAILABLE:
-            return GraphWidget(), None, None
+        outer_layout = QVBoxLayout(central_widget)
+        outer_layout.addWidget(scroll_area)
 
-        series = QLineSeries()
-        pen = QPen(QColor(color))
-        pen.setWidth(2)
-        series.setPen(pen)
-        series.setPointsVisible(True)
-
-        chart = QChart()
-        chart.addSeries(series)
-        chart.setTitle(title)
-        chart.legend().hide()
-        chart.setBackgroundBrush(QColor("#2b2b2b"))
-        chart.setBackgroundVisible(True)
-        chart.setTitleBrush(QColor("#ffffff"))
-
-        axis_x = QValueAxis()
-        axis_x.setLabelFormat("%d")
-        axis_x.setRange(0, self.max_history)
-        axis_x.setTickCount(6)
-        axis_x.setTitleText("Seconds")
-        axis_x.setLabelsBrush(QColor("#ffffff"))
-        axis_x.setLinePenColor(QColor("#ffffff"))
-
-        axis_y = QValueAxis()
-        axis_y.setRange(0, 100)
-        axis_y.setTickCount(5)
-        axis_y.setTitleText("%")
-        axis_y.setLabelsBrush(QColor("#ffffff"))
-        axis_y.setLinePenColor(QColor("#ffffff"))
-
-        chart.addAxis(axis_x, Qt.AlignBottom)
-        chart.addAxis(axis_y, Qt.AlignLeft)
-        series.attachAxis(axis_x)
-        series.attachAxis(axis_y)
-
-        chart_view = QChartView(chart)
-        chart_view.setRenderHint(QPainter.Antialiasing)
-        chart_view.setMinimumHeight(180)
-        chart_view.setStyleSheet("background-color: #2b2b2b;")
-
-        return chart_view, series, axis_x
+    def create_chart(self, title, color, fixed_max=None):
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-weight: bold; color: #ffffff;")
+        layout.addWidget(title_label)
+        graph_widget = GraphWidget(color, fixed_max=fixed_max)
+        graph_widget.setMinimumHeight(160)
+        layout.addWidget(graph_widget)
+        return container, graph_widget, None
 
     def update_series(self, chart_or_series, history):
         if chart_or_series is None:
@@ -150,19 +144,166 @@ class SystemMonitor(QMainWindow):
         except Exception:
             return
 
+    def get_cpu_temperature_readings(self):
+        readings = []
+        if hasattr(psutil, 'sensors_temperatures'):
+            try:
+                temps = psutil.sensors_temperatures()
+                for sensor_name, entries in temps.items():
+                    for entry in entries:
+                        if entry.current is None:
+                            continue
+                        label = (entry.label or sensor_name).lower()
+                        if 'cpu' in label or 'core' in label or 'package' in label:
+                            readings.append(entry.current)
+                if readings:
+                    return readings
+            except Exception:
+                pass
+        return readings
+
+    def start_cpu_temp_background_refresh(self):
+        if self.cpu_temp_thread is not None and self.cpu_temp_thread.is_alive():
+            return
+
+        def worker():
+            readings = self.get_cpu_temperature_readings()
+            if not readings and sys.platform.startswith('win'):
+                readings = self._read_cpu_temps_wmic()
+            if not readings and sys.platform.startswith('win'):
+                readings = self._read_cpu_temps_powershell()
+            if not readings and sys.platform.startswith('win'):
+                readings = self._read_openhardwaremonitor_temps()
+            if not readings and sys.platform.startswith('win'):
+                readings = self._read_librehardwaremonitor_temps()
+            self.last_cpu_temp_readings = readings
+            self.cpu_temp_fallback_complete = True
+
+        self.cpu_temp_thread = threading.Thread(target=worker, daemon=True)
+        self.cpu_temp_thread.start()
+
+    def _read_cpu_temps_wmic(self):
+        results = []
+        commands = [
+            ['wmic', 'PATH', 'MSAcpi_ThermalZoneTemperature', 'get', 'CurrentTemperature', '/value'],
+            ['wmic', 'PATH', 'Win32_TemperatureProbe', 'get', 'CurrentReading', '/value']
+        ]
+        for cmd in commands:
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+                if proc.returncode != 0:
+                    continue
+                values = self._parse_temp_output(proc.stdout)
+                results.extend(values)
+            except Exception:
+                continue
+        return results
+
+    def _read_cpu_temps_powershell(self):
+        results = []
+        commands = [
+            ['powershell', '-NoProfile', '-Command', 'Get-WmiObject -Namespace root\\wmi -Class MSAcpi_ThermalZoneTemperature | Select-Object -ExpandProperty CurrentTemperature'],
+            ['powershell', '-NoProfile', '-Command', 'Get-CimInstance -Namespace root\\wmi -ClassName MSAcpi_ThermalZoneTemperature | Select-Object -ExpandProperty CurrentTemperature'],
+            ['powershell', '-NoProfile', '-Command', 'Get-CimInstance -Namespace root\\cimv2 -ClassName Win32_TemperatureProbe | Select-Object -ExpandProperty CurrentReading']
+        ]
+        for cmd in commands:
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                if proc.returncode != 0:
+                    continue
+                values = self._parse_temp_output(proc.stdout)
+                results.extend(values)
+            except Exception:
+                continue
+        return results
+
+    def _read_openhardwaremonitor_temps(self):
+        results = []
+        commands = [
+            ['powershell', '-NoProfile', '-Command', 'Get-WmiObject -Namespace root\\OpenHardwareMonitor -Class Sensor | Where-Object { $_.SensorType -eq "Temperature" } | Select-Object -ExpandProperty Value'],
+            ['powershell', '-NoProfile', '-Command', 'Get-CimInstance -Namespace root\\OpenHardwareMonitor -ClassName Sensor | Where-Object { $_.SensorType -eq "Temperature" } | Select-Object -ExpandProperty Value']
+        ]
+        for cmd in commands:
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                if proc.returncode != 0:
+                    continue
+                results.extend(self._parse_temp_output(proc.stdout))
+            except Exception:
+                continue
+        return results
+
+    def _read_librehardwaremonitor_temps(self):
+        results = []
+        commands = [
+            ['powershell', '-NoProfile', '-Command', 'Get-WmiObject -Namespace root\\LibreHardwareMonitor -Class Sensor | Where-Object { $_.SensorType -eq "Temperature" } | Select-Object -ExpandProperty Value'],
+            ['powershell', '-NoProfile', '-Command', 'Get-CimInstance -Namespace root\\LibreHardwareMonitor -ClassName Sensor | Where-Object { $_.SensorType -eq "Temperature" } | Select-Object -ExpandProperty Value']
+        ]
+        for cmd in commands:
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                if proc.returncode != 0:
+                    continue
+                results.extend(self._parse_temp_output(proc.stdout))
+            except Exception:
+                continue
+        return results
+
+    def _parse_temp_output(self, output):
+        results = []
+        for line in output.splitlines():
+            line = line.strip()
+            if not line or '=' in line and line.split('=', 1)[1].strip() == '':
+                continue
+            if '=' in line:
+                line = line.split('=', 1)[1].strip()
+            try:
+                value = float(line)
+            except ValueError:
+                continue
+            if value > 1000:
+                temp_c = (value / 10.0) - 273.15
+            elif value > 100:
+                temp_c = value / 10.0
+            else:
+                temp_c = value
+            results.append(round(temp_c, 1))
+        return results
+
+    def create_metric_button(self, text, details_tab_name):
+        button = QPushButton(text)
+        button.setCursor(Qt.PointingHandCursor)
+        button.setStyleSheet(
+            "QPushButton { border: none; color: #ffffff; text-align: left; font-weight: bold; font-size: 14px; }"
+            "QPushButton:hover { color: #9cf; }"
+        )
+        button.setFlat(True)
+        button.clicked.connect(lambda: self.navigate_to_details_tab(details_tab_name))
+        return button
+
+    def navigate_to_details_tab(self, tab_name):
+        if hasattr(self, 'main_tabs'):
+            self.main_tabs.setCurrentIndex(1)
+        if hasattr(self, 'details_tabs'):
+            for index in range(self.details_tabs.count()):
+                if self.details_tabs.tabText(index) == tab_name:
+                    self.details_tabs.setCurrentIndex(index)
+                    break
+
     def create_overview_tab(self):
         widget = QWidget()
         layout = QGridLayout()
         layout.setSpacing(15)
 
         # CPU Info
-        layout.addWidget(QLabel("CPU Usage"), 0, 0)
+        self.cpu_button = self.create_metric_button("CPU Usage", "CPU")
+        layout.addWidget(self.cpu_button, 0, 0)
         self.cpu_label = QLabel("0%")
         self.cpu_label.setFont(QFont("Arial", 16, QFont.Bold))
         layout.addWidget(self.cpu_label, 0, 1)
-        self.cpu_chart_view, self.cpu_series, _ = self.create_chart("CPU Usage", "#4CAF50")
-        if self.cpu_chart_view:
-            layout.addWidget(self.cpu_chart_view, 1, 0, 1, 2)
+        self.cpu_chart_container, self.cpu_chart_view, self.cpu_series = self.create_chart("CPU Usage", "#4CAF50", fixed_max=100)
+        if self.cpu_chart_container:
+            layout.addWidget(self.cpu_chart_container, 1, 0, 1, 2)
         else:
             self.cpu_bar = QProgressBar()
             self.cpu_bar.setStyleSheet("""
@@ -177,13 +318,14 @@ class SystemMonitor(QMainWindow):
             layout.addWidget(self.cpu_bar, 1, 0, 1, 2)
 
         # Memory Info
-        layout.addWidget(QLabel("Memory Usage"), 2, 0)
+        self.memory_button = self.create_metric_button("Memory Usage", "RAM")
+        layout.addWidget(self.memory_button, 2, 0)
         self.memory_label = QLabel("0%")
         self.memory_label.setFont(QFont("Arial", 16, QFont.Bold))
         layout.addWidget(self.memory_label, 2, 1)
-        self.memory_chart_view, self.memory_series, _ = self.create_chart("Memory Usage", "#2196F3")
-        if self.memory_chart_view:
-            layout.addWidget(self.memory_chart_view, 3, 0, 1, 2)
+        self.memory_chart_container, self.memory_chart_view, self.memory_series = self.create_chart("Memory Usage", "#2196F3", fixed_max=100)
+        if self.memory_chart_container:
+            layout.addWidget(self.memory_chart_container, 3, 0, 1, 2)
         else:
             self.memory_bar = QProgressBar()
             self.memory_bar.setStyleSheet("""
@@ -198,13 +340,14 @@ class SystemMonitor(QMainWindow):
             layout.addWidget(self.memory_bar, 3, 0, 1, 2)
 
         # GPU Info
-        layout.addWidget(QLabel("GPU Usage"), 4, 0)
+        self.gpu_button = self.create_metric_button("GPU Usage", "GPU")
+        layout.addWidget(self.gpu_button, 4, 0)
         self.gpu_label = QLabel("N/A")
         self.gpu_label.setFont(QFont("Arial", 16, QFont.Bold))
         layout.addWidget(self.gpu_label, 4, 1)
-        self.gpu_chart_view, self.gpu_series, _ = self.create_chart("GPU Usage", "#9C27B0")
-        if self.gpu_chart_view:
-            layout.addWidget(self.gpu_chart_view, 5, 0, 1, 2)
+        self.gpu_chart_container, self.gpu_chart_view, self.gpu_series = self.create_chart("GPU Usage", "#9C27B0", fixed_max=100)
+        if self.gpu_chart_container:
+            layout.addWidget(self.gpu_chart_container, 5, 0, 1, 2)
         else:
             self.gpu_bar = QProgressBar()
             self.gpu_bar.setStyleSheet("""
@@ -219,13 +362,14 @@ class SystemMonitor(QMainWindow):
             layout.addWidget(self.gpu_bar, 5, 0, 1, 2)
 
         # Disk Usage Info
-        layout.addWidget(QLabel("Disk Usage"), 6, 0)
+        self.disk_button = self.create_metric_button("Disk Usage", "Disk")
+        layout.addWidget(self.disk_button, 6, 0)
         self.disk_label = QLabel("0%")
         self.disk_label.setFont(QFont("Arial", 16, QFont.Bold))
         layout.addWidget(self.disk_label, 6, 1)
-        self.disk_chart_view, self.disk_series, _ = self.create_chart("Disk Usage", "#FF9800")
-        if self.disk_chart_view:
-            layout.addWidget(self.disk_chart_view, 7, 0, 1, 2)
+        self.disk_chart_container, self.disk_chart_view, self.disk_series = self.create_chart("Disk Usage", "#FF9800", fixed_max=100)
+        if self.disk_chart_container:
+            layout.addWidget(self.disk_chart_container, 7, 0, 1, 2)
         else:
             self.disk_bar = QProgressBar()
             self.disk_bar.setStyleSheet("""
@@ -240,13 +384,14 @@ class SystemMonitor(QMainWindow):
             layout.addWidget(self.disk_bar, 7, 0, 1, 2)
 
         # Ethernet Info
-        layout.addWidget(QLabel("Ethernet Usage"), 8, 0)
+        self.eth_button = self.create_metric_button("Ethernet Usage", "Ethernet")
+        layout.addWidget(self.eth_button, 8, 0)
         self.eth_label = QLabel("0%")
         self.eth_label.setFont(QFont("Arial", 16, QFont.Bold))
         layout.addWidget(self.eth_label, 8, 1)
-        self.eth_chart_view, self.eth_series, _ = self.create_chart("Ethernet Usage", "#00BCD4")
-        if self.eth_chart_view:
-            layout.addWidget(self.eth_chart_view, 9, 0, 1, 2)
+        self.eth_chart_container, self.eth_chart_view, self.eth_series = self.create_chart("Ethernet Usage", "#00BCD4", fixed_max=100)
+        if self.eth_chart_container:
+            layout.addWidget(self.eth_chart_container, 9, 0, 1, 2)
         else:
             self.eth_bar = QProgressBar()
             self.eth_bar.setStyleSheet("""
@@ -275,6 +420,7 @@ class SystemMonitor(QMainWindow):
         layout.setSpacing(10)
         
         details_tabs = QTabWidget()
+        self.details_tabs = details_tabs
         details_tabs.setStyleSheet("""
             QTabWidget::pane { border: 1px solid #555; }
             QTabBar::tab { background-color: #3b3b3b; color: #fff; padding: 8px 20px; }
@@ -292,29 +438,73 @@ class SystemMonitor(QMainWindow):
         
     def create_cpu_details_tab(self):
         widget = QWidget()
-        layout = QGridLayout()
-        layout.setSpacing(10)
-        layout.addWidget(QLabel("CPU Load:"), 0, 0)
+        main_layout = QVBoxLayout()
+        main_layout.setSpacing(10)
+
+        info_layout = QGridLayout()
+        info_layout.setSpacing(10)
+        info_layout.addWidget(QLabel("CPU Load:"), 0, 0)
         self.cpu_load_detail_label = QLabel()
-        layout.addWidget(self.cpu_load_detail_label, 0, 1)
-        
-        layout.addWidget(QLabel("Physical Cores:"), 1, 0)
+        info_layout.addWidget(self.cpu_load_detail_label, 0, 1)
+
+        info_layout.addWidget(QLabel("Physical Cores:"), 1, 0)
         self.cpu_physical_label = QLabel()
-        layout.addWidget(self.cpu_physical_label, 1, 1)
-        
-        layout.addWidget(QLabel("Logical Cores:"), 2, 0)
+        info_layout.addWidget(self.cpu_physical_label, 1, 1)
+
+        info_layout.addWidget(QLabel("Logical Cores:"), 2, 0)
         self.cpu_logical_label = QLabel()
-        layout.addWidget(self.cpu_logical_label, 2, 1)
-        
-        layout.addWidget(QLabel("Frequency:"), 3, 0)
-        self.cpu_freq_label = QLabel()
-        layout.addWidget(self.cpu_freq_label, 3, 1)
-        
-        layout.addWidget(QLabel("Max Frequency:"), 4, 0)
-        self.cpu_max_freq_label = QLabel()
-        layout.addWidget(self.cpu_max_freq_label, 4, 1)
-        
-        widget.setLayout(layout)
+        info_layout.addWidget(self.cpu_logical_label, 2, 1)
+
+        info_layout.addWidget(QLabel("Current Frequency:"), 3, 0)
+        self.cpu_current_freq_label = QLabel()
+        info_layout.addWidget(self.cpu_current_freq_label, 3, 1)
+
+        info_layout.addWidget(QLabel("Boost Frequency:"), 4, 0)
+        self.cpu_boost_freq_label = QLabel()
+        info_layout.addWidget(self.cpu_boost_freq_label, 4, 1)
+
+        info_layout.addWidget(QLabel("Throttling:"), 5, 0)
+        self.cpu_throttling_label = QLabel()
+        info_layout.addWidget(self.cpu_throttling_label, 5, 1)
+
+        info_layout.addWidget(QLabel("CPU Temp Max:"), 6, 0)
+        self.cpu_temp_max_label = QLabel()
+        info_layout.addWidget(self.cpu_temp_max_label, 6, 1)
+
+        info_layout.addWidget(QLabel("CPU Temp Avg:"), 7, 0)
+        self.cpu_temp_avg_label = QLabel()
+        info_layout.addWidget(self.cpu_temp_avg_label, 7, 1)
+
+        info_layout.addWidget(QLabel("Power Usage:"), 8, 0)
+        self.cpu_power_watts_label = QLabel()
+        info_layout.addWidget(self.cpu_power_watts_label, 8, 1)
+
+        info_layout.addWidget(QLabel("Package Power:"), 9, 0)
+        self.cpu_power_package_label = QLabel()
+        info_layout.addWidget(self.cpu_power_package_label, 9, 1)
+
+        main_layout.addLayout(info_layout)
+
+        main_layout.addWidget(QLabel("Per-Core Usage:"))
+        self.cpu_core_labels = []
+        core_count = psutil.cpu_count(logical=True) or 1
+        for i in range(core_count):
+            core_label = QLabel(f"Core {i + 1}: 0%")
+            core_label.setFont(QFont("Arial", 12))
+            self.cpu_core_labels.append(core_label)
+            main_layout.addWidget(core_label)
+
+        main_layout.addWidget(QLabel("CPU Frequency Graph:"))
+        self.cpu_freq_graph = GraphWidget()
+        self.cpu_freq_graph.setMinimumHeight(160)
+        main_layout.addWidget(self.cpu_freq_graph)
+
+        main_layout.addWidget(QLabel("CPU Temperature Graph:"))
+        self.cpu_temp_graph = GraphWidget()
+        self.cpu_temp_graph.setMinimumHeight(160)
+        main_layout.addWidget(self.cpu_temp_graph)
+
+        widget.setLayout(main_layout)
         return widget
         
     def create_gpu_details_tab(self):
@@ -435,7 +625,11 @@ class SystemMonitor(QMainWindow):
         
     def update_system_info(self):
         # CPU
-        cpu_percent = psutil.cpu_percent(interval=0.1)
+        self.slow_update_counter += 1
+        do_slow_update = (self.slow_update_counter % self.slow_update_frequency) == 0
+
+        cpu_percents = psutil.cpu_percent(interval=None, percpu=True)
+        cpu_percent = round(sum(cpu_percents) / len(cpu_percents), 1) if cpu_percents else 0
         self.cpu_label.setText(f"{cpu_percent}%")
         self.cpu_history.append(cpu_percent)
         self.cpu_history = self.cpu_history[-self.max_history:]
@@ -451,8 +645,52 @@ class SystemMonitor(QMainWindow):
         self.cpu_load_detail_label.setText(f"{cpu_percent}%")
         self.cpu_physical_label.setText(str(cpu_count_physical))
         self.cpu_logical_label.setText(str(cpu_count_logical))
-        self.cpu_freq_label.setText(f"{cpu_freq_current:.0f} MHz")
-        self.cpu_max_freq_label.setText(f"{cpu_freq_max:.0f} MHz")
+        self.cpu_current_freq_label.setText(f"{cpu_freq_current:.0f} MHz / {cpu_freq_current / 1000:.2f} GHz")
+        self.cpu_boost_freq_label.setText(f"{cpu_freq_max:.0f} MHz / {cpu_freq_max / 1000:.2f} GHz")
+        throttling_status = "Unknown"
+        if cpu_freq and cpu_freq_max > 0:
+            throttling_status = "Yes" if cpu_freq_current + 100 < cpu_freq_max and cpu_percent > 95 else "No"
+        self.cpu_throttling_label.setText(throttling_status)
+
+        for idx, label in enumerate(self.cpu_core_labels):
+            if idx < len(cpu_percents):
+                label.setText(f"Core {idx + 1}: {cpu_percents[idx]}%")
+            else:
+                label.setText(f"Core {idx + 1}: N/A")
+
+        self.cpu_freq_history.append(cpu_freq_current)
+        self.cpu_freq_history = self.cpu_freq_history[-self.max_history:]
+        self.cpu_freq_graph.set_history(self.cpu_freq_history)
+
+        cpu_temp_readings = self.last_cpu_temp_readings
+        if cpu_temp_readings:
+            cpu_temp_max = max(cpu_temp_readings)
+            cpu_temp_avg = sum(cpu_temp_readings) / len(cpu_temp_readings)
+        else:
+            cpu_temp_max = None
+            cpu_temp_avg = None
+        self.cpu_temp_max_label.setText(f"{cpu_temp_max:.1f} °C" if cpu_temp_max is not None else "N/A")
+        self.cpu_temp_avg_label.setText(f"{cpu_temp_avg:.1f} °C" if cpu_temp_avg is not None else "N/A")
+        self.cpu_temp_history.append(cpu_temp_max if cpu_temp_max is not None else 0)
+        self.cpu_temp_history = self.cpu_temp_history[-self.max_history:]
+        self.cpu_temp_graph.set_history(self.cpu_temp_history)
+
+        if not self.cpu_temp_fallback_complete:
+            self.start_cpu_temp_background_refresh()
+
+        cpu_power_watts = "N/A"
+        cpu_package_power = "N/A"
+        if hasattr(psutil, 'sensors_power'):
+            try:
+                power_data = psutil.sensors_power()
+                if isinstance(power_data, dict):
+                    cpu_power_watts = power_data.get('power' if 'power' in power_data else next(iter(power_data), ''), 'N/A')
+                elif hasattr(power_data, 'power'):
+                    cpu_power_watts = getattr(power_data, 'power')
+            except Exception:
+                pass
+        self.cpu_power_watts_label.setText(str(cpu_power_watts))
+        self.cpu_power_package_label.setText(str(cpu_package_power))
         
         # Memory
         memory = psutil.virtual_memory()
@@ -547,6 +785,7 @@ class SystemMonitor(QMainWindow):
         gpu_shown = False
         gpu_temp = None
         gpu_load = 0.0
+        gpu_mem = 0.0
         if GPUtil is not None:
             try:
                 gpus = GPUtil.getGPUs()
@@ -565,9 +804,22 @@ class SystemMonitor(QMainWindow):
                     self.gpu_mem_percent_label.setText(f"{gpu_mem:.0f}%")
                     self.gpu_temp_label.setText(f"{gpu_temp} °C" if gpu_temp is not None else "N/A")
                     gpu_shown = True
+                    self.last_gpu_data = {
+                        'gpu_load': gpu_load,
+                        'gpu_mem': gpu_mem,
+                        'gpu_temp': gpu_temp,
+                        'gpu_name': gpu.name,
+                        'gpu_used': gpu.memoryUsed,
+                        'gpu_total': gpu.memoryTotal,
+                        'gpu_label': self.gpu_label.text(),
+                        'gpu_load_label': self.gpu_load_label.text(),
+                        'gpu_mem_label': self.gpu_mem_label.text(),
+                        'gpu_mem_percent_label': self.gpu_mem_percent_label.text(),
+                        'gpu_temp_label': self.gpu_temp_label.text(),
+                    }
             except Exception:
                 pass
-        if not gpu_shown:
+        if not gpu_shown and do_slow_update:
             try:
                 proc = subprocess.run(
                     ["nvidia-smi", "--query-gpu=name,utilization.gpu,utilization.memory,memory.used,memory.total", "--format=csv,noheader,nounits"],
@@ -591,8 +843,36 @@ class SystemMonitor(QMainWindow):
                         self.gpu_mem_percent_label.setText(f"{gpu_mem:.0f}%")
                         self.gpu_temp_label.setText("N/A")
                         gpu_shown = True
+                        self.last_gpu_data = {
+                            'gpu_load': gpu_load,
+                            'gpu_mem': gpu_mem,
+                            'gpu_temp': None,
+                            'gpu_name': name,
+                            'gpu_used': mem_used,
+                            'gpu_total': mem_total,
+                            'gpu_label': self.gpu_label.text(),
+                            'gpu_load_label': self.gpu_load_label.text(),
+                            'gpu_mem_label': self.gpu_mem_label.text(),
+                            'gpu_mem_percent_label': self.gpu_mem_percent_label.text(),
+                            'gpu_temp_label': self.gpu_temp_label.text(),
+                        }
             except Exception:
                 pass
+        if not gpu_shown and self.last_gpu_data:
+            data = self.last_gpu_data
+            gpu_load = data.get('gpu_load', 0.0)
+            gpu_mem = data.get('gpu_mem', 0.0)
+            gpu_temp = data.get('gpu_temp')
+            self.gpu_label.setText(data.get('gpu_label', 'N/A'))
+            if hasattr(self, 'gpu_bar'):
+                self.gpu_bar.setValue(int(gpu_load))
+                self.gpu_bar.setFormat(f"{gpu_mem:.0f}% mem")
+            self.gpu_name_label.setText(data.get('gpu_name', 'GPU info unavailable'))
+            self.gpu_load_label.setText(data.get('gpu_load_label', ''))
+            self.gpu_mem_label.setText(data.get('gpu_mem_label', ''))
+            self.gpu_mem_percent_label.setText(data.get('gpu_mem_percent_label', ''))
+            self.gpu_temp_label.setText(data.get('gpu_temp_label', ''))
+            gpu_shown = True
         if not gpu_shown:
             self.gpu_label.setText("N/A")
             if hasattr(self, 'gpu_bar'):
