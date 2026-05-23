@@ -81,47 +81,155 @@ This application displays live hardware statistics such as CPU, RAM, disk usage,
 - Matplotlib
 ---
 
-## ⚙️ Installation
+## ⚙️ Installation (beginner-friendly)
 
-### Step 1: Clone the repository
+You do **not** need to be a programmer. If you can install a normal program and copy a few commands, you can run this app.
+
+### What you need first
+
+| Item | What it is | How to check |
+|------|------------|--------------|
+| **Windows 10 or 11** | Your PC operating system | Most gaming PCs use this |
+| **Python 3.10+** | The language this app runs on | Open **Command Prompt** or **PowerShell**, type `python --version`, press Enter. You should see something like `Python 3.12.x` |
+| **Internet** | Only for the first install | To download Python (if needed) and required packages |
+
+**Don’t have Python yet?**
+
+1. Go to [https://www.python.org/downloads/](https://www.python.org/downloads/) and download the latest **Windows** installer.
+2. Run the installer.
+3. On the first screen, turn **on** the box that says **“Add python.exe to PATH”** (this is important).
+4. Click **Install Now** and finish the wizard.
+5. Close and reopen any terminal windows, then try `python --version` again.
+
+> **Using Cursor or VS Code?** You can also press **F5** after opening this folder, if a run configuration is already set up. The steps below still help when something does not start.
+
+---
+
+### Step 1 — Get the project on your PC
+
+Pick **one** method.
+
+**Option A — Download as ZIP (easiest if you don’t use Git)**
+
+1. On GitHub, click the green **Code** button → **Download ZIP**.
+2. Extract the ZIP (right-click → **Extract All…**).
+3. You should end up with a folder named something like `System-Monitor-Project`.
+4. Remember where you saved it (e.g. `Desktop\System-Monitor-Project`).
+
+**Option B — Git clone (if you already use Git)**
+
 ```bash
 git clone <your-repo-url>
 cd System-Monitor-Project
 ```
 
-### Step 2: Create virtual environment
-```bash
-python -m venv .venv
-```
+---
 
-### Step 3: Activate environment (Windows PowerShell)
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-```
+### Step 2 — Open a terminal in the project folder
 
-### Step 4: Install dependencies
-```bash
-pip install -r requirements.txt
-```
+The terminal is the black or blue window where you type commands.
 
-**If requirements file is missing:**
-```bash
-dir -Recurse requirements.txt
-cd <folder-containing-file>
-pip install -r requirements.txt
-```
+**Windows 11 / 10 (simple way):**
+
+1. Open File Explorer and go to your `System-Monitor-Project` folder.
+2. Click the address bar at the top, type `powershell`, press **Enter**.  
+   A PowerShell window opens already “inside” the right folder.
+
+**Alternative:** Right-click inside the folder → **Open in Terminal** (wording may vary).
+
+You should see a path ending in `System-Monitor-Project` in the window. If not, you’re in the wrong folder.
 
 ---
 
-## 🚀 Running the Application
+### Step 3 — Install what the app needs
 
-### Start GUI (Main Mode)
-```bash
+Copy and paste these commands **one at a time**, press **Enter** after each, and wait until it finishes.
+
+**Recommended (keeps this project separate from other Python apps):**
+
+```powershell
+python -m venv .venv
+```
+
+If Windows blocks the next command, run this once (only affects the current window):
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+Then activate the environment:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+You should see `(.venv)` at the start of the line — that means it worked.
+
+**Install packages:**
+
+```powershell
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+That may take a few minutes. Errors in red are what matter; yellow warnings are often fine.
+
+**Quick path (skip virtual environment):**  
+If the steps above confuse you, you can try only:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+It often works, but installing into a `.venv` is cleaner if you use Python for other projects too.
+
+---
+
+### Step 4 — Start the app
+
+With the same terminal open (and `(.venv)` visible if you used Step 3):
+
+```powershell
 python main.py
 ```
 
-### Headless Test Mode (No GUI)
+A window titled **System Monitor — Gaming** should open.
+
+To close the app, close the window or press **Ctrl+C** in the terminal.
+
+---
+
+## 🚀 Running the app again later
+
+You only need to install packages **once**. Next time:
+
+1. Open PowerShell in the `System-Monitor-Project` folder (Step 2).
+2. If you used a virtual environment before, run:  
+   `.\.venv\Scripts\Activate.ps1`
+3. Run:  
+   `python main.py`
+
+---
+
+## 🩹 Something went wrong?
+
+| Problem | What to try |
+|---------|-------------|
+| **`'python' is not recognized`** | Reinstall Python and enable **Add to PATH**, then restart the PC. Or try `py main.py` instead of `python main.py`. |
+| **`pip` is not recognized** | Use `python -m pip install -r requirements.txt` instead. |
+| **Red errors while installing** | Make sure you’re in the folder that contains `requirements.txt`. Run `dir` and check that `main.py` is listed. |
+| **Window flashes and closes** | Run from PowerShell (Step 2) so you can read the error message. |
+| **CPU temperature shows N/A** | Allow **LibreHardwareMonitor** in Windows Defender (first run may download it). Some PCs also need **Run as administrator**. |
+| **Weird font messages in the terminal** | Safe to ignore on Windows. |
+
+Still stuck? Copy the **full red error text** from PowerShell when asking for help — that makes fixes much faster.
+
+---
+
+## 🧪 Headless test (optional, for developers)
+
+You can skip this unless someone asked you to test without a window:
+
 ```powershell
 $env:QT_QPA_PLATFORM="offscreen"
 python tests\run_headless.py
