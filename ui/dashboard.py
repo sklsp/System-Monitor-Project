@@ -12,12 +12,30 @@ if str(project_root) not in sys.path:
 try:
     from monitoring.net import get_active_network_interface, get_interface_speed
     from monitoring.disk import get_disk_busy_percent
+    from monitoring.cpu_temp import get_cpu_temperature_readings, temperature_status_hint
+    from monitoring.ping import PingMonitor
+    from monitoring.gaming import (
+        get_foreground_app,
+        analyze_bottleneck,
+        update_session_peaks,
+        collect_performance_alerts,
+        get_top_processes,
+    )
 except ModuleNotFoundError:
     project_root = Path(__file__).resolve().parents[1]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     from monitoring.net import get_active_network_interface, get_interface_speed
     from monitoring.disk import get_disk_busy_percent
+    from monitoring.cpu_temp import get_cpu_temperature_readings, temperature_status_hint
+    from monitoring.ping import PingMonitor
+    from monitoring.gaming import (
+        get_foreground_app,
+        analyze_bottleneck,
+        update_session_peaks,
+        collect_performance_alerts,
+        get_top_processes,
+    )
 
 try:
     import GPUtil
@@ -31,19 +49,20 @@ except ImportError:
     QT_CHARTS_AVAILABLE = False
 
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QGridLayout, QLabel, QProgressBar, QTabWidget, QPushButton, QScrollArea
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QProgressBar, QTabWidget, QPushButton, QScrollArea
 )
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QFont, QPainter, QColor, QPen
 
 from ui.graphs import GraphWidget
+from ui.gaming_tab import GamingTab
 
 
 class SystemMonitor(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("System Monitor")
-        self.setGeometry(100, 100, 1000, 700)
+        self.setWindowTitle("System Monitor — Gaming")
+        self.setGeometry(100, 100, 1100, 760)
         self.setStyleSheet("background-color: #2b2b2b; color: #ffffff;")
 
         # Initialize data storage for charts
@@ -52,21 +71,26 @@ class SystemMonitor(QMainWindow):
         self.gpu_history = []
         self.disk_history = []
         self.eth_history = []
-        self.cpu_freq_history = []
+        core_count = psutil.cpu_count(logical=True) or 1
+        self.cpu_core_histories = [[] for _ in range(core_count)]
         self.cpu_temp_history = []
         self.max_history = 30
         self.prev_disk_io = psutil.disk_io_counters()
         self.prev_net_io = psutil.net_io_counters(pernic=True)
         self.network_interface = get_active_network_interface()
         self.last_cpu_temp_readings = []
+        self.last_cpu_temp_hint = None
         self.last_gpu_data = None
-        self.cpu_temp_fallback_complete = False
         self.cpu_temp_thread = None
         self.slow_update_counter = 0
         self.slow_update_frequency = 10
+        self.session_peaks = {"cpu": 0, "gpu": 0, "ram": 0, "cpu_temp": 0, "gpu_temp": 0}
+        self.last_top_processes = []
+        self.ping_monitor = PingMonitor()
         psutil.cpu_percent(interval=None)
 
         self.init_ui()
+        self.ping_monitor.start()
         self.start_cpu_temp_background_refresh()
 
         # Timer for updating info
@@ -84,7 +108,7 @@ class SystemMonitor(QMainWindow):
         content_widget = QWidget()
         main_layout = QVBoxLayout(content_widget)
 
-        title = QLabel("System Monitor")
+        title = QLabel("System Monitor — Gaming")
         title_font = QFont()
         title_font.setPointSize(18)
         title_font.setBold(True)
@@ -99,6 +123,9 @@ class SystemMonitor(QMainWindow):
             QTabBar::tab { background-color: #3b3b3b; color: #fff; padding: 8px 20px; }
             QTabBar::tab:selected { background-color: #555; }
         """)
+
+        self.gaming_tab = GamingTab(on_top_toggle=self.set_always_on_top)
+        tabs.addTab(self.gaming_tab, "Gaming")
 
         overview_widget = self.create_overview_tab()
         tabs.addTab(overview_widget, "Overview")
@@ -144,131 +171,25 @@ class SystemMonitor(QMainWindow):
         except Exception:
             return
 
-    def get_cpu_temperature_readings(self):
-        readings = []
-        if hasattr(psutil, 'sensors_temperatures'):
-            try:
-                temps = psutil.sensors_temperatures()
-                for sensor_name, entries in temps.items():
-                    for entry in entries:
-                        if entry.current is None:
-                            continue
-                        label = (entry.label or sensor_name).lower()
-                        if 'cpu' in label or 'core' in label or 'package' in label:
-                            readings.append(entry.current)
-                if readings:
-                    return readings
-            except Exception:
-                pass
-        return readings
-
     def start_cpu_temp_background_refresh(self):
         if self.cpu_temp_thread is not None and self.cpu_temp_thread.is_alive():
             return
 
         def worker():
-            readings = self.get_cpu_temperature_readings()
-            if not readings and sys.platform.startswith('win'):
-                readings = self._read_cpu_temps_wmic()
-            if not readings and sys.platform.startswith('win'):
-                readings = self._read_cpu_temps_powershell()
-            if not readings and sys.platform.startswith('win'):
-                readings = self._read_openhardwaremonitor_temps()
-            if not readings and sys.platform.startswith('win'):
-                readings = self._read_librehardwaremonitor_temps()
+            readings = get_cpu_temperature_readings()
             self.last_cpu_temp_readings = readings
-            self.cpu_temp_fallback_complete = True
+            self.last_cpu_temp_hint = temperature_status_hint() if not readings else None
 
         self.cpu_temp_thread = threading.Thread(target=worker, daemon=True)
         self.cpu_temp_thread.start()
 
-    def _read_cpu_temps_wmic(self):
-        results = []
-        commands = [
-            ['wmic', 'PATH', 'MSAcpi_ThermalZoneTemperature', 'get', 'CurrentTemperature', '/value'],
-            ['wmic', 'PATH', 'Win32_TemperatureProbe', 'get', 'CurrentReading', '/value']
-        ]
-        for cmd in commands:
-            try:
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
-                if proc.returncode != 0:
-                    continue
-                values = self._parse_temp_output(proc.stdout)
-                results.extend(values)
-            except Exception:
-                continue
-        return results
-
-    def _read_cpu_temps_powershell(self):
-        results = []
-        commands = [
-            ['powershell', '-NoProfile', '-Command', 'Get-WmiObject -Namespace root\\wmi -Class MSAcpi_ThermalZoneTemperature | Select-Object -ExpandProperty CurrentTemperature'],
-            ['powershell', '-NoProfile', '-Command', 'Get-CimInstance -Namespace root\\wmi -ClassName MSAcpi_ThermalZoneTemperature | Select-Object -ExpandProperty CurrentTemperature'],
-            ['powershell', '-NoProfile', '-Command', 'Get-CimInstance -Namespace root\\cimv2 -ClassName Win32_TemperatureProbe | Select-Object -ExpandProperty CurrentReading']
-        ]
-        for cmd in commands:
-            try:
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                if proc.returncode != 0:
-                    continue
-                values = self._parse_temp_output(proc.stdout)
-                results.extend(values)
-            except Exception:
-                continue
-        return results
-
-    def _read_openhardwaremonitor_temps(self):
-        results = []
-        commands = [
-            ['powershell', '-NoProfile', '-Command', 'Get-WmiObject -Namespace root\\OpenHardwareMonitor -Class Sensor | Where-Object { $_.SensorType -eq "Temperature" } | Select-Object -ExpandProperty Value'],
-            ['powershell', '-NoProfile', '-Command', 'Get-CimInstance -Namespace root\\OpenHardwareMonitor -ClassName Sensor | Where-Object { $_.SensorType -eq "Temperature" } | Select-Object -ExpandProperty Value']
-        ]
-        for cmd in commands:
-            try:
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                if proc.returncode != 0:
-                    continue
-                results.extend(self._parse_temp_output(proc.stdout))
-            except Exception:
-                continue
-        return results
-
-    def _read_librehardwaremonitor_temps(self):
-        results = []
-        commands = [
-            ['powershell', '-NoProfile', '-Command', 'Get-WmiObject -Namespace root\\LibreHardwareMonitor -Class Sensor | Where-Object { $_.SensorType -eq "Temperature" } | Select-Object -ExpandProperty Value'],
-            ['powershell', '-NoProfile', '-Command', 'Get-CimInstance -Namespace root\\LibreHardwareMonitor -ClassName Sensor | Where-Object { $_.SensorType -eq "Temperature" } | Select-Object -ExpandProperty Value']
-        ]
-        for cmd in commands:
-            try:
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                if proc.returncode != 0:
-                    continue
-                results.extend(self._parse_temp_output(proc.stdout))
-            except Exception:
-                continue
-        return results
-
-    def _parse_temp_output(self, output):
-        results = []
-        for line in output.splitlines():
-            line = line.strip()
-            if not line or '=' in line and line.split('=', 1)[1].strip() == '':
-                continue
-            if '=' in line:
-                line = line.split('=', 1)[1].strip()
-            try:
-                value = float(line)
-            except ValueError:
-                continue
-            if value > 1000:
-                temp_c = (value / 10.0) - 273.15
-            elif value > 100:
-                temp_c = value / 10.0
-            else:
-                temp_c = value
-            results.append(round(temp_c, 1))
-        return results
+    def set_always_on_top(self, enabled: bool) -> None:
+        flags = self.windowFlags()
+        if enabled:
+            self.setWindowFlags(flags | Qt.WindowStaysOnTopHint)
+        else:
+            self.setWindowFlags(flags & ~Qt.WindowStaysOnTopHint)
+        self.show()
 
     def create_metric_button(self, text, details_tab_name):
         button = QPushButton(text)
@@ -475,29 +396,42 @@ class SystemMonitor(QMainWindow):
         self.cpu_temp_avg_label = QLabel()
         info_layout.addWidget(self.cpu_temp_avg_label, 7, 1)
 
-        info_layout.addWidget(QLabel("Power Usage:"), 8, 0)
-        self.cpu_power_watts_label = QLabel()
-        info_layout.addWidget(self.cpu_power_watts_label, 8, 1)
+        self.cpu_temp_hint_label = QLabel()
+        self.cpu_temp_hint_label.setWordWrap(True)
+        self.cpu_temp_hint_label.setStyleSheet("color: #ffb74d; font-size: 11px;")
+        info_layout.addWidget(self.cpu_temp_hint_label, 8, 0, 1, 2)
 
-        info_layout.addWidget(QLabel("Package Power:"), 9, 0)
+        info_layout.addWidget(QLabel("Power Usage:"), 9, 0)
+        self.cpu_power_watts_label = QLabel()
+        info_layout.addWidget(self.cpu_power_watts_label, 9, 1)
+
+        info_layout.addWidget(QLabel("Package Power:"), 10, 0)
         self.cpu_power_package_label = QLabel()
-        info_layout.addWidget(self.cpu_power_package_label, 9, 1)
+        info_layout.addWidget(self.cpu_power_package_label, 10, 1)
 
         main_layout.addLayout(info_layout)
 
         main_layout.addWidget(QLabel("Per-Core Usage:"))
         self.cpu_core_labels = []
-        core_count = psutil.cpu_count(logical=True) or 1
+        self.cpu_core_graphs = []
+        core_count = len(self.cpu_core_histories)
+        core_colors = ["#4CAF50", "#66BB6A", "#81C784", "#43A047", "#2E7D32", "#1B5E20"]
         for i in range(core_count):
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 2, 0, 2)
+            row_layout.setSpacing(8)
             core_label = QLabel(f"Core {i + 1}: 0%")
-            core_label.setFont(QFont("Arial", 12))
+            core_label.setFont(QFont("Arial", 11))
+            core_label.setMinimumWidth(95)
             self.cpu_core_labels.append(core_label)
-            main_layout.addWidget(core_label)
-
-        main_layout.addWidget(QLabel("CPU Frequency Graph:"))
-        self.cpu_freq_graph = GraphWidget()
-        self.cpu_freq_graph.setMinimumHeight(160)
-        main_layout.addWidget(self.cpu_freq_graph)
+            core_graph = GraphWidget(core_colors[i % len(core_colors)], fixed_max=100)
+            core_graph.setMinimumHeight(52)
+            core_graph.setMaximumHeight(60)
+            self.cpu_core_graphs.append(core_graph)
+            row_layout.addWidget(core_label)
+            row_layout.addWidget(core_graph, 1)
+            main_layout.addWidget(row_widget)
 
         main_layout.addWidget(QLabel("CPU Temperature Graph:"))
         self.cpu_temp_graph = GraphWidget()
@@ -654,13 +588,15 @@ class SystemMonitor(QMainWindow):
 
         for idx, label in enumerate(self.cpu_core_labels):
             if idx < len(cpu_percents):
-                label.setText(f"Core {idx + 1}: {cpu_percents[idx]}%")
+                pct = cpu_percents[idx]
+                label.setText(f"Core {idx + 1}: {pct}%")
+                if idx < len(self.cpu_core_histories):
+                    self.cpu_core_histories[idx].append(pct)
+                    self.cpu_core_histories[idx] = self.cpu_core_histories[idx][-self.max_history:]
+                if idx < len(self.cpu_core_graphs):
+                    self.cpu_core_graphs[idx].set_history(self.cpu_core_histories[idx])
             else:
                 label.setText(f"Core {idx + 1}: N/A")
-
-        self.cpu_freq_history.append(cpu_freq_current)
-        self.cpu_freq_history = self.cpu_freq_history[-self.max_history:]
-        self.cpu_freq_graph.set_history(self.cpu_freq_history)
 
         cpu_temp_readings = self.last_cpu_temp_readings
         if cpu_temp_readings:
@@ -671,11 +607,14 @@ class SystemMonitor(QMainWindow):
             cpu_temp_avg = None
         self.cpu_temp_max_label.setText(f"{cpu_temp_max:.1f} °C" if cpu_temp_max is not None else "N/A")
         self.cpu_temp_avg_label.setText(f"{cpu_temp_avg:.1f} °C" if cpu_temp_avg is not None else "N/A")
-        self.cpu_temp_history.append(cpu_temp_max if cpu_temp_max is not None else 0)
-        self.cpu_temp_history = self.cpu_temp_history[-self.max_history:]
-        self.cpu_temp_graph.set_history(self.cpu_temp_history)
+        if hasattr(self, 'cpu_temp_hint_label'):
+            self.cpu_temp_hint_label.setText(self.last_cpu_temp_hint or "")
+        if cpu_temp_max is not None:
+            self.cpu_temp_history.append(cpu_temp_max)
+            self.cpu_temp_history = self.cpu_temp_history[-self.max_history:]
+            self.cpu_temp_graph.set_history(self.cpu_temp_history)
 
-        if not self.cpu_temp_fallback_complete:
+        if self.cpu_temp_thread is None or not self.cpu_temp_thread.is_alive():
             self.start_cpu_temp_background_refresh()
 
         cpu_power_watts = "N/A"
@@ -822,7 +761,11 @@ class SystemMonitor(QMainWindow):
         if not gpu_shown and do_slow_update:
             try:
                 proc = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=name,utilization.gpu,utilization.memory,memory.used,memory.total", "--format=csv,noheader,nounits"],
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=name,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu",
+                        "--format=csv,noheader,nounits",
+                    ],
                     capture_output=True,
                     text=True,
                     timeout=1,
@@ -833,6 +776,11 @@ class SystemMonitor(QMainWindow):
                         name, load, mem_util, mem_used, mem_total = fields[:5]
                         gpu_load = float(load)
                         gpu_mem = float(mem_util)
+                        if len(fields) >= 6 and fields[5]:
+                            try:
+                                gpu_temp = float(fields[5])
+                            except ValueError:
+                                pass
                         self.gpu_label.setText(f"{gpu_load:.0f}%")
                         if hasattr(self, 'gpu_bar'):
                             self.gpu_bar.setValue(int(gpu_load))
@@ -841,12 +789,14 @@ class SystemMonitor(QMainWindow):
                         self.gpu_load_label.setText(f"Load: {gpu_load:.0f}%")
                         self.gpu_mem_label.setText(f"Memory: {mem_used} MiB / {mem_total} MiB")
                         self.gpu_mem_percent_label.setText(f"{gpu_mem:.0f}%")
-                        self.gpu_temp_label.setText("N/A")
+                        self.gpu_temp_label.setText(
+                            f"{gpu_temp:.0f} °C" if gpu_temp is not None else "N/A"
+                        )
                         gpu_shown = True
                         self.last_gpu_data = {
                             'gpu_load': gpu_load,
                             'gpu_mem': gpu_mem,
-                            'gpu_temp': None,
+                            'gpu_temp': gpu_temp,
                             'gpu_name': name,
                             'gpu_used': mem_used,
                             'gpu_total': mem_total,
@@ -891,4 +841,63 @@ class SystemMonitor(QMainWindow):
         # Processes
         process_count = len(psutil.pids())
         self.process_label.setText(str(process_count))
+
+        if do_slow_update:
+            self.last_top_processes = get_top_processes(5)
+
+        self.update_gaming_tab(
+            cpu_percent=cpu_percent,
+            gpu_load=gpu_load,
+            memory_percent=memory_percent,
+            gpu_mem=gpu_mem,
+            cpu_temp_max=cpu_temp_max if cpu_temp_readings else None,
+            gpu_temp=gpu_temp,
+        )
+
+    def update_gaming_tab(
+        self,
+        cpu_percent,
+        gpu_load,
+        memory_percent,
+        gpu_mem,
+        cpu_temp_max,
+        gpu_temp,
+    ):
+        if not hasattr(self, "gaming_tab"):
+            return
+
+        update_session_peaks(
+            self.session_peaks,
+            cpu_percent,
+            gpu_load,
+            memory_percent,
+            cpu_temp_max,
+            gpu_temp,
+        )
+        ping_results = self.ping_monitor.get_results()
+        ping_avg = self.ping_monitor.average_ms()
+        bottleneck = analyze_bottleneck(cpu_percent, gpu_load, memory_percent)
+        alerts = collect_performance_alerts(
+            cpu_percent,
+            gpu_load,
+            memory_percent,
+            cpu_temp_max,
+            gpu_temp,
+            ping_avg,
+        )
+        self.gaming_tab.update_metrics(
+            {
+                "foreground": get_foreground_app(),
+                "cpu_percent": cpu_percent,
+                "gpu_percent": gpu_load,
+                "ram_percent": memory_percent,
+                "vram_percent": gpu_mem if gpu_mem else None,
+                "ping_avg": ping_avg,
+                "ping_results": ping_results,
+                "bottleneck": bottleneck,
+                "alerts": alerts,
+                "peaks": self.session_peaks,
+                "top_processes": self.last_top_processes,
+            }
+        )
 

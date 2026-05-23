@@ -2,3 +2,4 @@ PyQt5
 PyQtChart
 psutil
 GPUtil
+pywin32; sys_platform == "win32"

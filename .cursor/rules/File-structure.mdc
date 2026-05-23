@@ -1,0 +1,6 @@
+---
+description: 
+alwaysApply: true
+---
+
+Keep each component under 600 lines and maintain a modular file structure.

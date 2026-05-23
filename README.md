@@ -33,6 +33,16 @@ This application displays live hardware statistics such as CPU, RAM, disk usage,
 - Upload / download activity
 - Ethernet link speed
 
+### 🎮 Gaming (tab)
+- Actief venster / game-detectie (IN GAME / DESKTOP)
+- Live CPU, GPU, RAM, VRAM en ping
+- Bottleneck-analyse (CPU/GPU/RAM-bound)
+- Prestatiewaarschuwingen (temp, RAM, ping)
+- Session peaks sinds start
+- Ping-grafiek (Google + Cloudflare)
+- Top processen op CPU
+- Altijd-bovenaan overlay-modus
+
 ### ⚙️ System
 - Active processes list
 - Real-time updates
@@ -43,12 +53,9 @@ This application displays live hardware statistics such as CPU, RAM, disk usage,
 
 ## 🚀 Planned Features
 
-- CPU & GPU temperature monitoring
 - Fan speed tracking
-- Clock speed monitoring (CPU/GPU)
-- FPS overlay for gaming
-- In-game performance statistics
-- Ping / latency monitoring
+- FPS overlay for gaming (in-game hook)
+- Frame time / 1% lows
 - Bandwidth usage graphs
 - System uptime tracking
 - Advanced process manager

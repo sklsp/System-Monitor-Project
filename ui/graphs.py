@@ -4,11 +4,12 @@ from PyQt5.QtCore import Qt, QRect
 
 
 class GraphWidget(QWidget):
-    def __init__(self, color="#4CAF50", fixed_max=None, parent=None):
+    def __init__(self, color="#4CAF50", fixed_max=None, value_suffix="%", parent=None):
         super().__init__(parent)
         self.history = []
         self.color = QColor(color)
         self.fixed_max = fixed_max
+        self.value_suffix = value_suffix
         self.setMinimumHeight(160)
 
     def set_history(self, history):
@@ -90,9 +91,17 @@ class GraphWidget(QWidget):
         latest = self.history[-1]
         painter.setPen(Qt.white)
         painter.setFont(QFont("Arial", 9, QFont.Bold))
-        painter.drawText(QRect(margin + 4, margin + 2, 120, 18), Qt.AlignLeft, f"Now: {latest}%")
+        painter.drawText(
+            QRect(margin + 4, margin + 2, 120, 18),
+            Qt.AlignLeft,
+            f"Now: {latest}{self.value_suffix}",
+        )
 
         painter.setPen(QColor(180, 180, 180))
         painter.setFont(QFont("Arial", 8))
         painter.drawText(QRect(margin, rect.height() - margin - 18, 100, 16), Qt.AlignLeft, "History")
-        painter.drawText(QRect(rect.width() - margin - 90, rect.height() - margin - 18, 90, 16), Qt.AlignRight, f"Max: {maxv}%")
+        painter.drawText(
+            QRect(rect.width() - margin - 90, rect.height() - margin - 18, 90, 16),
+            Qt.AlignRight,
+            f"Max: {maxv}{self.value_suffix}",
+        )
