@@ -85,6 +85,27 @@ This application displays live hardware statistics such as CPU, RAM, disk usage,
 
 You do **not** need to be a programmer. If you can install a normal program and copy a few commands, you can run this app.
 
+### Easiest way — double-click `start.bat` (Windows)
+
+1. Install **Python** once (see below) with **Add to PATH** enabled.
+2. Put the project folder on your PC (ZIP download or Git clone).
+3. **Double-click `start.bat`** in the `System-Monitor-Project` folder.
+
+The batch file will automatically:
+
+- find Python on your PC  
+- create a virtual environment (first time only)  
+- install required packages (first time only)  
+- start the System Monitor window  
+
+If something fails, the black window stays open with an error message you can read or copy for help.
+
+> **Next times:** just double-click `start.bat` again — setup is skipped if everything is already installed.
+
+---
+
+### Manual install (if you prefer the terminal)
+
 ### What you need first
 
 | Item | What it is | How to check |
@@ -201,13 +222,9 @@ To close the app, close the window or press **Ctrl+C** in the terminal.
 
 ## 🚀 Running the app again later
 
-You only need to install packages **once**. Next time:
+**Easy:** double-click **`start.bat`** again.
 
-1. Open PowerShell in the `System-Monitor-Project` folder (Step 2).
-2. If you used a virtual environment before, run:  
-   `.\.venv\Scripts\Activate.ps1`
-3. Run:  
-   `python main.py`
+**Manual:** open PowerShell in the project folder, run `.\.venv\Scripts\Activate.ps1`, then `python main.py`.
 
 ---
 
