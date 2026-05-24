@@ -178,7 +178,7 @@ class SystemMonitor(QMainWindow):
         def worker():
             readings = get_cpu_temperature_readings()
             self.last_cpu_temp_readings = readings
-            self.last_cpu_temp_hint = temperature_status_hint() if not readings else None
+            self.last_cpu_temp_hint = temperature_status_hint(bool(readings))
 
         self.cpu_temp_thread = threading.Thread(target=worker, daemon=True)
         self.cpu_temp_thread.start()

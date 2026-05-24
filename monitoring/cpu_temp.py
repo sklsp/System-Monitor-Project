@@ -1,34 +1,24 @@
-"""CPU temperature collection for Windows and other platforms."""
+"""CPU temperature collection without running LibreHardwareMonitor.exe."""
 
 from __future__ import annotations
 
+import base64
 import subprocess
 import sys
-import threading
-import time
-import zipfile
+import tempfile
 from pathlib import Path
-from urllib.request import urlretrieve
 
 import psutil
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-VENDOR_DIR = PROJECT_ROOT / "vendor" / "LibreHardwareMonitor"
-LHM_DLL = VENDOR_DIR / "LibreHardwareMonitorLib.dll"
-LHM_EXE = VENDOR_DIR / "LibreHardwareMonitor.exe"
-LHM_PS1 = Path(__file__).with_name("read_cpu_temp_lhm.ps1")
-LHM_RELEASE_URL = (
-    "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/"
-    "releases/download/v0.9.4/LibreHardwareMonitor-net472.zip"
-)
+HW_LIB_DIR = Path(__file__).resolve().parent / "libs" / "hardware"
+HW_DLL = HW_LIB_DIR / "LibreHardwareMonitorLib.dll"
+HW_PS1 = Path(__file__).with_name("read_cpu_temp.ps1")
+TEMP_OUTPUT = Path(tempfile.gettempdir()) / "system_monitor_cpu_temps.txt"
 
 CPU_SENSOR_KEYS = ("cpu", "core", "package", "tctl", "tdie", "ccd", "socket", "dies")
 GPU_SENSOR_KEYS = ("gpu", "graphics", "geforce", "radeon", "video", "vram")
 
-_lhm_process = None
-_lhm_started_by_app = False
-_lhm_elevated_attempted = False
-_setup_lock = threading.Lock()
+_elevated_dll_attempted = False
 
 
 def _valid_celsius(value: float) -> bool:
@@ -81,6 +71,51 @@ def _unique(readings: list[float]) -> list[float]:
     return result
 
 
+def _is_process_elevated() -> bool:
+    if not sys.platform.startswith("win"):
+        return False
+    try:
+        import ctypes
+
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def _run_powershell(command: str, timeout: int = 25) -> subprocess.CompletedProcess | None:
+    try:
+        return subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        return None
+
+
+def _run_powershell_encoded(script: str, timeout: int = 25) -> subprocess.CompletedProcess | None:
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    try:
+        return subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-EncodedCommand",
+                encoded,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        return None
+
+
 def _from_psutil() -> list[float]:
     if not hasattr(psutil, "sensors_temperatures"):
         return []
@@ -99,7 +134,7 @@ def _from_psutil() -> list[float]:
     return readings
 
 
-def _from_wmi_namespace(namespace: str) -> list[float]:
+def _from_wmi_acpi() -> list[float]:
     try:
         import win32com.client
     except ImportError:
@@ -107,228 +142,233 @@ def _from_wmi_namespace(namespace: str) -> list[float]:
 
     readings: list[float] = []
     try:
-        if namespace == r"root\wmi":
-            wmi_obj = win32com.client.GetObject(r"winmgmts:\\.\root\wmi")
-            sensors = wmi_obj.ExecQuery("SELECT * FROM MSAcpi_ThermalZoneTemperature")
-            for sensor in sensors:
-                temp_c = sensor.CurrentTemperature / 10.0 - 273.15
-                if _valid_celsius(temp_c):
-                    readings.append(round(temp_c, 1))
-            return readings
-
-        wmi_obj = win32com.client.GetObject(rf"winmgmts:\\.\{namespace}")
-        query = "SELECT Name, Value FROM Sensor WHERE SensorType='Temperature'"
-        for sensor in wmi_obj.ExecQuery(query):
-            name = str(sensor.Name)
-            if not _is_cpu_sensor_name(name):
-                continue
-            try:
-                value = float(sensor.Value)
-            except (TypeError, ValueError):
-                continue
-            if _valid_celsius(value):
-                readings.append(round(value, 1))
+        wmi_obj = win32com.client.GetObject(r"winmgmts:\\.\root\wmi")
+        sensors = wmi_obj.ExecQuery("SELECT * FROM MSAcpi_ThermalZoneTemperature")
+        for sensor in sensors:
+            temp_c = sensor.CurrentTemperature / 10.0 - 273.15
+            if _valid_celsius(temp_c):
+                readings.append(round(temp_c, 1))
     except Exception:
         return []
     return readings
 
 
-def _from_powershell(command: str, timeout: int = 8) -> list[float]:
+def _from_external_monitor_wmi() -> list[float]:
+    """Use WMI only if another tool already exposed sensors (no app is started)."""
     try:
-        proc = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", command],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
+        import win32com.client
+    except ImportError:
+        return []
+
+    readings: list[float] = []
+    for namespace in (r"root\LibreHardwareMonitor", r"root\OpenHardwareMonitor"):
+        try:
+            wmi_obj = win32com.client.GetObject(rf"winmgmts:\\.\{namespace}")
+            query = "SELECT Name, Value FROM Sensor WHERE SensorType='Temperature'"
+            for sensor in wmi_obj.ExecQuery(query):
+                name = str(sensor.Name)
+                if not _is_cpu_sensor_name(name):
+                    continue
+                try:
+                    value = float(sensor.Value)
+                except (TypeError, ValueError):
+                    continue
+                if _valid_celsius(value):
+                    readings.append(round(value, 1))
+        except Exception:
+            continue
+    return readings
+
+
+def _from_wmi_probes() -> list[float]:
+    try:
+        import win32com.client
+    except ImportError:
+        return []
+
+    readings: list[float] = []
+    try:
+        wmi_obj = win32com.client.GetObject(r"winmgmts:\\.\root\cimv2")
+        probes = wmi_obj.ExecQuery("SELECT CurrentReading FROM Win32_TemperatureProbe")
+        for probe in probes:
+            if probe.CurrentReading is None:
+                continue
+            temp_c = _normalize_tenths_kelvin(float(probe.CurrentReading))
+            if _valid_celsius(temp_c):
+                readings.append(round(temp_c, 1))
     except Exception:
         return []
-    if proc.returncode != 0:
+    return readings
+
+
+def _from_powershell_cim(command: str, timeout: int = 8) -> list[float]:
+    proc = _run_powershell(command, timeout=timeout)
+    if proc is None or proc.returncode != 0:
         return []
     return _parse_text_values(proc.stdout)
 
 
-def _from_lhm_dll() -> list[float]:
-    if not LHM_DLL.is_file() or not LHM_PS1.is_file():
-        return []
-    try:
-        proc = subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                str(LHM_PS1),
-                "-DllDirectory",
-                str(VENDOR_DIR),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=20,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except Exception:
-        return []
-    if proc.returncode != 0:
-        return []
-    return _parse_text_values(proc.stdout)
+def _from_windows_native() -> list[float]:
+    """Built-in Windows sources (no third-party apps)."""
+    readings = _from_wmi_acpi()
+    if readings:
+        return readings
+
+    readings = _from_wmi_probes()
+    if readings:
+        return readings
+
+    ps_commands = (
+        "Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature "
+        "-ErrorAction SilentlyContinue | Select-Object -ExpandProperty CurrentTemperature",
+        "Get-CimInstance -ClassName Win32_TemperatureProbe -ErrorAction SilentlyContinue "
+        "| Select-Object -ExpandProperty CurrentReading",
+        "Get-CimInstance -ClassName Win32_PerfFormattedData_Counters_ThermalZoneInformation "
+        "-ErrorAction SilentlyContinue | Select-Object -ExpandProperty Temperature",
+    )
+    for command in ps_commands:
+        readings = _from_powershell_cim(command)
+        if readings:
+            return readings
+    return []
 
 
-def find_lhm_directory() -> Path | None:
-    candidates = [
-        VENDOR_DIR,
-        Path(r"C:\Program Files\LibreHardwareMonitor"),
-        Path(r"C:\Program Files (x86)\LibreHardwareMonitor"),
-    ]
-    for path in candidates:
-        if (path / "LibreHardwareMonitorLib.dll").is_file():
-            return path
+def _hardware_lib_dir() -> Path | None:
+    if HW_DLL.is_file():
+        return HW_LIB_DIR
     return None
 
 
-def ensure_lhm_installed() -> bool:
-    if LHM_DLL.is_file():
-        return True
-    with _setup_lock:
-        if LHM_DLL.is_file():
-            return True
-        VENDOR_DIR.mkdir(parents=True, exist_ok=True)
-        zip_path = VENDOR_DIR.parent / "lhm.zip"
-        try:
-            urlretrieve(LHM_RELEASE_URL, zip_path)
-            with zipfile.ZipFile(zip_path, "r") as archive:
-                archive.extractall(VENDOR_DIR)
-            zip_path.unlink(missing_ok=True)
-        except Exception:
-            return False
-    return LHM_DLL.is_file()
+def _read_temp_output_file() -> list[float]:
+    if not TEMP_OUTPUT.is_file():
+        return []
+    try:
+        text = TEMP_OUTPUT.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return []
+    return _parse_text_values(text)
 
 
-def _start_lhm_process(exe: Path, lhm_dir: Path, elevated: bool = False) -> None:
-    global _lhm_process, _lhm_started_by_app, _lhm_elevated_attempted
+def _from_bundled_hardware_lib() -> list[float]:
+    """Run sensor DLL in the current process privilege level."""
+    lib_dir = _hardware_lib_dir()
+    if lib_dir is None or not HW_PS1.is_file():
+        return []
 
-    if elevated:
-        _lhm_elevated_attempted = True
-        script = (
-            f"Start-Process -FilePath '{exe}' -WorkingDirectory '{lhm_dir}' "
-            "-Verb RunAs -WindowStyle Hidden"
-        )
-        subprocess.run(
-            ["powershell", "-NoProfile", "-Command", script],
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            timeout=15,
-        )
-        time.sleep(4)
-        return
+    proc = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(HW_PS1),
+            "-LibDirectory",
+            str(lib_dir),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    if proc.returncode != 0:
+        return []
+    return _parse_text_values(proc.stdout)
+
+
+def _from_bundled_hardware_lib_elevated() -> list[float]:
+    """
+    Elevated child processes cannot pipe stdout back to a non-admin parent.
+    Write readings to a temp file and read them here.
+    """
+    lib_dir = _hardware_lib_dir()
+    if lib_dir is None or not HW_PS1.is_file():
+        return []
 
     try:
-        _lhm_process = subprocess.Popen(
-            [str(exe)],
-            cwd=str(lhm_dir),
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-        _lhm_started_by_app = True
-        time.sleep(3)
-    except Exception:
-        _lhm_process = None
+        TEMP_OUTPUT.unlink(missing_ok=True)
+    except OSError:
+        pass
 
+    ps1 = str(HW_PS1).replace("'", "''")
+    lib = str(lib_dir).replace("'", "''")
+    out = str(TEMP_OUTPUT).replace("'", "''")
 
-def _has_cpu_temp_data() -> bool:
-    return bool(
-        _from_wmi_namespace(r"root\LibreHardwareMonitor")
-        or _from_wmi_namespace(r"root\OpenHardwareMonitor")
-        or _from_lhm_dll()
+    inner_script = (
+        f"& '{ps1}' -LibDirectory '{lib}' | "
+        f"ForEach-Object {{ $_.ToString() }} | "
+        f"Set-Content -LiteralPath '{out}' -Encoding UTF8"
+    )
+    inner_b64 = base64.b64encode(inner_script.encode("utf-16-le")).decode("ascii")
+
+    wrapper_script = (
+        f"$p = Start-Process powershell -ArgumentList @("
+        f"'-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','{inner_b64}'"
+        f") -Verb RunAs -Wait -PassThru -WindowStyle Hidden; "
+        f"if ($p.ExitCode -ne 0) {{ exit $p.ExitCode }}"
     )
 
+    proc = _run_powershell(wrapper_script, timeout=35)
+    if proc is None or proc.returncode != 0:
+        return _read_temp_output_file()
 
-def ensure_lhm_running() -> None:
-    global _lhm_elevated_attempted
-
-    if _has_cpu_temp_data():
-        return
-
-    lhm_dir = find_lhm_directory()
-    if lhm_dir is None and ensure_lhm_installed():
-        lhm_dir = VENDOR_DIR
-    if lhm_dir is None:
-        return
-
-    exe = lhm_dir / "LibreHardwareMonitor.exe"
-    if not exe.is_file():
-        return
-
-    if _lhm_process is not None and _lhm_process.poll() is None and _has_cpu_temp_data():
-        return
-
-    _start_lhm_process(exe, lhm_dir, elevated=False)
-
-    if not _has_cpu_temp_data() and not _lhm_elevated_attempted:
-        _start_lhm_process(exe, lhm_dir, elevated=True)
+    readings = _read_temp_output_file()
+    if readings:
+        return readings
+    return _parse_text_values(proc.stdout)
 
 
 def get_cpu_temperature_readings() -> list[float]:
+    global _elevated_dll_attempted
+
     readings = _from_psutil()
     if readings:
         return _unique(readings)
 
     if sys.platform.startswith("win"):
-        ensure_lhm_installed()
-        ensure_lhm_running()
-
-        for namespace in (r"root\LibreHardwareMonitor", r"root\OpenHardwareMonitor"):
-            readings = _from_wmi_namespace(namespace)
-            if readings:
-                return _unique(readings)
-
-        readings = _from_lhm_dll()
+        readings = _from_windows_native()
         if readings:
             return _unique(readings)
 
-        readings = _from_wmi_namespace(r"root\wmi")
+        readings = _from_external_monitor_wmi()
         if readings:
             return _unique(readings)
 
-        ps_script = r"""
-$sensors = Get-CimInstance -Namespace root/LibreHardwareMonitor -ClassName Sensor -ErrorAction SilentlyContinue |
-  Where-Object { $_.SensorType -eq 'Temperature' }
-foreach ($s in $sensors) {
-  $n = $s.Name.ToLower()
-  if ($n -match 'gpu|graphics|geforce|radeon|video|vram') { continue }
-  if ($n -notmatch 'cpu|core|package|tctl|tdie|ccd|socket|dies') { continue }
-  if ($s.Value -ge 1 -and $s.Value -le 120) { $s.Value }
-}
-"""
-        readings = _from_powershell(ps_script)
-        if readings:
-            return _unique(readings)
+        if _hardware_lib_dir() is not None:
+            if _is_process_elevated():
+                readings = _from_bundled_hardware_lib()
+                if readings:
+                    return _unique(readings)
+            else:
+                readings = _from_bundled_hardware_lib()
+                if readings:
+                    return _unique(readings)
 
-        for command in (
-            "Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature | "
-            "Select-Object -ExpandProperty CurrentTemperature",
-            "Get-CimInstance -ClassName Win32_TemperatureProbe | "
-            "Select-Object -ExpandProperty CurrentReading",
-        ):
-            readings = _from_powershell(command)
-            if readings:
-                return _unique(readings)
+                if not _elevated_dll_attempted:
+                    _elevated_dll_attempted = True
+                    readings = _from_bundled_hardware_lib_elevated()
+                    if readings:
+                        return _unique(readings)
 
     return []
 
 
-def temperature_status_hint() -> str | None:
-    if get_cpu_temperature_readings():
+def temperature_status_hint(has_readings: bool = False) -> str | None:
+    if has_readings:
         return None
     if sys.platform.startswith("win"):
-        if find_lhm_directory() or LHM_DLL.is_file():
+        if _hardware_lib_dir() is not None:
+            if _is_process_elevated():
+                return (
+                    "CPU-temperatuur niet beschikbaar. Sensoren geven geen data terug "
+                    "(vaak bij AMD — controleer of monitoring/libs/hardware de DLL-bestanden bevat)."
+                )
             return (
-                "CPU-temperatuur vereist administratorrechten op dit systeem. "
-                "Start de app als administrator, sta LibreHardwareMonitor toe in "
-                "Windows Defender, of run vendor\\LibreHardwareMonitor\\LibreHardwareMonitor.exe als admin."
+                "CPU-temperatuur niet beschikbaar. Start Cursor of System Monitor "
+                "als administrator (rechtermuiskop - Als administrator uitvoeren), niet alleen "
+                "de PowerShell-pop-up accepteren tijdens debuggen."
             )
         return (
-            "CPU-temperatuur wordt automatisch ingesteld bij eerste start "
-            "(LibreHardwareMonitor)."
+            "CPU-temperatuur niet beschikbaar op dit systeem via standaard Windows-sensoren."
         )
     return "CPU-temperatuursensoren niet beschikbaar op dit platform."

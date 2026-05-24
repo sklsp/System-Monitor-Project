@@ -1,4 +1,4 @@
-vendor/lhm.zip
+vendor/
 __pycache__/
 *.py[cod]
 .Python

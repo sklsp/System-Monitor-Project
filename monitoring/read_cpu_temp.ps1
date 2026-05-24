@@ -1,11 +1,11 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$DllDirectory
+    [string]$LibDirectory
 )
 
 $ErrorActionPreference = 'Stop'
-Set-Location -LiteralPath $DllDirectory
-Add-Type -Path (Join-Path $DllDirectory 'LibreHardwareMonitorLib.dll')
+Set-Location -LiteralPath $LibDirectory
+Add-Type -Path (Join-Path $LibDirectory 'LibreHardwareMonitorLib.dll')
 
 $computer = New-Object LibreHardwareMonitor.Hardware.Computer
 $computer.IsCpuEnabled = $true

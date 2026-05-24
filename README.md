@@ -236,7 +236,7 @@ To close the app, close the window or press **Ctrl+C** in the terminal.
 | **`pip` is not recognized** | Use `python -m pip install -r requirements.txt` instead. |
 | **Red errors while installing** | Make sure you’re in the folder that contains `requirements.txt`. Run `dir` and check that `main.py` is listed. |
 | **Window flashes and closes** | Run from PowerShell (Step 2) so you can read the error message. |
-| **CPU temperature shows N/A** | Allow **LibreHardwareMonitor** in Windows Defender (first run may download it). Some PCs also need **Run as administrator**. |
+| **CPU temperature shows N/A** | On many gaming PCs (especially AMD) the app needs **administrator rights**. Use **`start_admin.bat`** or start **Cursor** as administrator before debugging (F5). A separate PowerShell UAC pop-up alone is not enough unless the app can read the result file afterward (fixed in recent versions). |
 | **Weird font messages in the terminal** | Safe to ignore on Windows. |
 
 Still stuck? Copy the **full red error text** from PowerShell when asking for help — that makes fixes much faster.
