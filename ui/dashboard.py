@@ -1,5 +1,7 @@
 import sys
 import subprocess
+import csv
+import io
 import threading
 import psutil
 from pathlib import Path
@@ -451,21 +453,49 @@ class SystemMonitor(QMainWindow):
         self.gpu_name_label = QLabel()
         layout.addWidget(self.gpu_name_label, 0, 1)
         
-        layout.addWidget(QLabel("GPU Load:"), 1, 0)
+        layout.addWidget(QLabel("Driver Version:"), 1, 0)
+        self.gpu_driver_label = QLabel()
+        layout.addWidget(self.gpu_driver_label, 1, 1)
+
+        layout.addWidget(QLabel("GPU Load:"), 2, 0)
         self.gpu_load_label = QLabel()
-        layout.addWidget(self.gpu_load_label, 1, 1)
+        layout.addWidget(self.gpu_load_label, 2, 1)
         
-        layout.addWidget(QLabel("Memory Usage:"), 2, 0)
-        self.gpu_mem_label = QLabel()
-        layout.addWidget(self.gpu_mem_label, 2, 1)
-        
-        layout.addWidget(QLabel("Memory Percent:"), 3, 0)
-        self.gpu_mem_percent_label = QLabel()
-        layout.addWidget(self.gpu_mem_percent_label, 3, 1)
-        
-        layout.addWidget(QLabel("Temperature:"), 4, 0)
+        layout.addWidget(QLabel("Core Clock (MHz):"), 3, 0)
+        self.gpu_core_clock_label = QLabel()
+        layout.addWidget(self.gpu_core_clock_label, 3, 1)
+
+        layout.addWidget(QLabel("Memory Clock (MHz):"), 4, 0)
+        self.gpu_mem_clock_label = QLabel()
+        layout.addWidget(self.gpu_mem_clock_label, 4, 1)
+
+        layout.addWidget(QLabel("Temperature:"), 5, 0)
         self.gpu_temp_label = QLabel()
-        layout.addWidget(self.gpu_temp_label, 4, 1)
+        layout.addWidget(self.gpu_temp_label, 5, 1)
+
+        layout.addWidget(QLabel("Fan Speed:"), 6, 0)
+        self.gpu_fan_label = QLabel()
+        layout.addWidget(self.gpu_fan_label, 6, 1)
+
+        layout.addWidget(QLabel("Throttling:"), 7, 0)
+        self.gpu_throttle_label = QLabel()
+        layout.addWidget(self.gpu_throttle_label, 7, 1)
+
+        layout.addWidget(QLabel("VRAM Usage:"), 8, 0)
+        self.gpu_mem_label = QLabel()
+        layout.addWidget(self.gpu_mem_label, 8, 1)
+
+        layout.addWidget(QLabel("VRAM Percent:"), 9, 0)
+        self.gpu_mem_percent_label = QLabel()
+        layout.addWidget(self.gpu_mem_percent_label, 9, 1)
+
+        layout.addWidget(QLabel("Power Draw (W):"), 10, 0)
+        self.gpu_power_draw_label = QLabel()
+        layout.addWidget(self.gpu_power_draw_label, 10, 1)
+
+        layout.addWidget(QLabel("Power Limit / Headroom:"), 11, 0)
+        self.gpu_power_limit_label = QLabel()
+        layout.addWidget(self.gpu_power_limit_label, 11, 1)
         
         widget.setLayout(layout)
         return widget
@@ -758,6 +788,52 @@ class SystemMonitor(QMainWindow):
                         'gpu_mem_percent_label': self.gpu_mem_percent_label.text(),
                         'gpu_temp_label': self.gpu_temp_label.text(),
                     }
+                    # Supplement GPUtil info with nvidia-smi for more fields if available
+                    try:
+                        proc = subprocess.run(
+                            [
+                                "nvidia-smi",
+                                "--query-gpu=driver_version,clocks.current.graphics,clocks.current.memory,fan.speed,power.draw,power.limit",
+                                "--format=csv,noheader,nounits",
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=0.8,
+                        )
+                        if proc.returncode == 0 and proc.stdout.strip():
+                            r = next(csv.reader(io.StringIO(proc.stdout)), None)
+                            if r and len(r) >= 6:
+                                drv = r[0].strip()
+                                try:
+                                    core_clk = float(r[1].strip())
+                                except Exception:
+                                    core_clk = None
+                                try:
+                                    mem_clk = float(r[2].strip())
+                                except Exception:
+                                    mem_clk = None
+                                fan = r[3].strip()
+                                try:
+                                    p_draw = float(r[4].strip())
+                                except Exception:
+                                    p_draw = None
+                                try:
+                                    p_limit = float(r[5].strip())
+                                except Exception:
+                                    p_limit = None
+                                self.gpu_driver_label.setText(drv)
+                                self.gpu_core_clock_label.setText(f"{core_clk:.0f} MHz" if core_clk is not None else "N/A")
+                                self.gpu_mem_clock_label.setText(f"{mem_clk:.0f} MHz" if mem_clk is not None else "N/A")
+                                self.gpu_fan_label.setText(fan or "N/A")
+                                self.gpu_power_draw_label.setText(f"{p_draw:.1f} W" if p_draw is not None else "N/A")
+                                if p_limit is not None:
+                                    try:
+                                        headroom_pct = max(0.0, (p_limit - (p_draw or 0)) / p_limit * 100)
+                                        self.gpu_power_limit_label.setText(f"{p_limit:.0f} W ({headroom_pct:.0f}% headroom)")
+                                    except Exception:
+                                        self.gpu_power_limit_label.setText(f"{p_limit:.0f} W")
+                    except Exception:
+                        pass
             except Exception:
                 pass
         # If GPUtil didn't provide GPU info, try nvidia-smi as a fallback.
@@ -767,7 +843,7 @@ class SystemMonitor(QMainWindow):
                 proc = subprocess.run(
                     [
                         "nvidia-smi",
-                        "--query-gpu=name,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu",
+                        "--query-gpu=name,driver_version,utilization.gpu,clocks.current.graphics,clocks.current.memory,temperature.gpu,fan.speed,power.draw,power.limit,memory.used,memory.total",
                         "--format=csv,noheader,nounits",
                     ],
                     capture_output=True,
@@ -775,40 +851,114 @@ class SystemMonitor(QMainWindow):
                     timeout=1,
                 )
                 if proc.returncode == 0 and proc.stdout.strip():
-                    fields = [f.strip() for f in proc.stdout.split(',')]
-                    if len(fields) >= 5:
-                        name, load, mem_util, mem_used, mem_total = fields[:5]
-                        gpu_load = float(load)
-                        gpu_mem = float(mem_util)
-                        if len(fields) >= 6 and fields[5]:
-                            try:
-                                gpu_temp = float(fields[5])
-                            except ValueError:
-                                pass
+                    reader = csv.reader(io.StringIO(proc.stdout))
+                    # Use first GPU only for UI
+                    row = next(reader, None)
+                    if row and len(row) >= 11:
+                        # Map fields from nvidia-smi
+                        name = row[0].strip()
+                        driver = row[1].strip()
+                        try:
+                            load = float(row[2].strip())
+                        except Exception:
+                            load = 0.0
+                        try:
+                            core_clk = float(row[3].strip())
+                        except Exception:
+                            core_clk = None
+                        try:
+                            mem_clk = float(row[4].strip())
+                        except Exception:
+                            mem_clk = None
+                        try:
+                            temp = float(row[5].strip())
+                        except Exception:
+                            temp = None
+                        fan = row[6].strip()
+                        try:
+                            power_draw = float(row[7].strip())
+                        except Exception:
+                            power_draw = None
+                        try:
+                            power_limit = float(row[8].strip())
+                        except Exception:
+                            power_limit = None
+                        mem_used = row[9].strip()
+                        mem_total = row[10].strip()
+
+                        gpu_load = load
+                        gpu_mem = None
+                        # parse memory values (may be integers)
+                        try:
+                            mem_used_val = float(mem_used)
+                            mem_total_val = float(mem_total)
+                            gpu_mem = (mem_used_val / mem_total_val) * 100 if mem_total_val > 0 else 0.0
+                        except Exception:
+                            mem_used_val = None
+                            mem_total_val = None
+
+                        # Determine throttling heuristics
+                        throttle = "No"
+                        if temp is not None and temp >= 90:
+                            throttle = "Yes (thermal)"
+                        elif power_limit is not None and power_draw is not None and power_draw >= power_limit * 0.98:
+                            throttle = "Yes (power)"
+
+                        # Update UI labels
                         self.gpu_label.setText(f"{gpu_load:.0f}%")
                         if hasattr(self, 'gpu_bar'):
                             self.gpu_bar.setValue(int(gpu_load))
-                            self.gpu_bar.setFormat(f"{gpu_mem:.0f}% mem")
+                            if gpu_mem is not None:
+                                self.gpu_bar.setFormat(f"{gpu_mem:.0f}% mem")
                         self.gpu_name_label.setText(name)
+                        self.gpu_driver_label.setText(driver)
                         self.gpu_load_label.setText(f"Load: {gpu_load:.0f}%")
-                        self.gpu_mem_label.setText(f"Memory: {mem_used} MiB / {mem_total} MiB")
-                        self.gpu_mem_percent_label.setText(f"{gpu_mem:.0f}%")
-                        self.gpu_temp_label.setText(
-                            f"{gpu_temp:.0f} °C" if gpu_temp is not None else "N/A"
-                        )
+                        if mem_used_val is not None and mem_total_val is not None:
+                            self.gpu_mem_label.setText(f"Memory: {mem_used_val:.0f} MiB / {mem_total_val:.0f} MiB")
+                            self.gpu_mem_percent_label.setText(f"{(gpu_mem or 0):.0f}%")
+                        else:
+                            self.gpu_mem_label.setText(f"Memory: {mem_used} / {mem_total}")
+                        self.gpu_core_clock_label.setText(f"{core_clk:.0f} MHz" if core_clk is not None else "N/A")
+                        self.gpu_mem_clock_label.setText(f"{mem_clk:.0f} MHz" if mem_clk is not None else "N/A")
+                        self.gpu_temp_label.setText(f"{temp:.0f} °C" if temp is not None else "N/A")
+                        self.gpu_fan_label.setText(f"{fan}" if fan else "N/A")
+                        self.gpu_power_draw_label.setText(f"{power_draw:.1f} W" if power_draw is not None else "N/A")
+                        if power_limit is not None:
+                            headroom = None
+                            if power_draw is not None:
+                                try:
+                                    headroom_pct = max(0.0, (power_limit - power_draw) / power_limit * 100)
+                                    headroom = f"{power_limit:.0f} W ({headroom_pct:.0f}% headroom)"
+                                except Exception:
+                                    headroom = f"{power_limit:.0f} W"
+                            else:
+                                headroom = f"{power_limit:.0f} W"
+                            self.gpu_power_limit_label.setText(headroom)
+                        else:
+                            self.gpu_power_limit_label.setText("N/A")
+
+                        self.gpu_throttle_label.setText(throttle)
+
                         gpu_shown = True
                         self.last_gpu_data = {
                             'gpu_load': gpu_load,
                             'gpu_mem': gpu_mem,
-                            'gpu_temp': gpu_temp,
+                            'gpu_temp': temp,
                             'gpu_name': name,
-                            'gpu_used': mem_used,
-                            'gpu_total': mem_total,
+                            'gpu_used': mem_used_val,
+                            'gpu_total': mem_total_val,
                             'gpu_label': self.gpu_label.text(),
                             'gpu_load_label': self.gpu_load_label.text(),
                             'gpu_mem_label': self.gpu_mem_label.text(),
                             'gpu_mem_percent_label': self.gpu_mem_percent_label.text(),
                             'gpu_temp_label': self.gpu_temp_label.text(),
+                            'gpu_driver': driver,
+                            'gpu_core_clock': core_clk,
+                            'gpu_mem_clock': mem_clk,
+                            'gpu_fan': fan,
+                            'gpu_power_draw': power_draw,
+                            'gpu_power_limit': power_limit,
+                            'gpu_throttle': throttle,
                         }
             except Exception:
                 pass
@@ -856,6 +1006,16 @@ class SystemMonitor(QMainWindow):
             gpu_mem=gpu_mem,
             cpu_temp_max=cpu_temp_max if cpu_temp_readings else None,
             gpu_temp=gpu_temp,
+            # Additional GPU details for gaming tab
+            gpu_model=(self.last_gpu_data.get('gpu_name') if self.last_gpu_data else None),
+            vram_total=(self.last_gpu_data.get('gpu_total') if self.last_gpu_data else None),
+            driver_version=(self.last_gpu_data.get('gpu_driver') if self.last_gpu_data else None),
+            core_clock=(self.last_gpu_data.get('gpu_core_clock') if self.last_gpu_data else None),
+            memory_clock=(self.last_gpu_data.get('gpu_mem_clock') if self.last_gpu_data else None),
+            fan_speed=(self.last_gpu_data.get('gpu_fan') if self.last_gpu_data else None),
+            throttling=(self.last_gpu_data.get('gpu_throttle') if self.last_gpu_data else None),
+            power_draw=(self.last_gpu_data.get('gpu_power_draw') if self.last_gpu_data else None),
+            power_limit=(self.last_gpu_data.get('gpu_power_limit') if self.last_gpu_data else None),
         )
 
     def update_gaming_tab(
@@ -866,6 +1026,15 @@ class SystemMonitor(QMainWindow):
         gpu_mem,
         cpu_temp_max,
         gpu_temp,
+        gpu_model=None,
+        vram_total=None,
+        driver_version=None,
+        core_clock=None,
+        memory_clock=None,
+        fan_speed=None,
+        throttling=None,
+        power_draw=None,
+        power_limit=None,
     ):
         if not hasattr(self, "gaming_tab"):
             return
@@ -896,6 +1065,15 @@ class SystemMonitor(QMainWindow):
                 "gpu_percent": gpu_load,
                 "ram_percent": memory_percent,
                 "vram_percent": gpu_mem if gpu_mem else None,
+                "gpu_model": gpu_model,
+                "vram_total": vram_total,
+                "driver_version": driver_version,
+                "core_clock": core_clock,
+                "memory_clock": memory_clock,
+                "fan_speed": fan_speed,
+                "throttling": throttling,
+                "power_draw": power_draw,
+                "power_limit": power_limit,
                 "ping_avg": ping_avg,
                 "ping_results": ping_results,
                 "bottleneck": bottleneck,

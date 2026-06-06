@@ -51,6 +51,10 @@ class GamingTab(QWidget):
         self.process_label.setStyleSheet("font-size: 11px; color: #999;")
         layout.addWidget(self.process_label)
 
+        self.gpu_summary_label = QLabel("")
+        self.gpu_summary_label.setStyleSheet("font-size: 12px; color: #ccc;")
+        layout.addWidget(self.gpu_summary_label)
+
         layout.addLayout(self._create_stat_row())
 
         info = QGridLayout()
@@ -144,6 +148,23 @@ class GamingTab(QWidget):
         self.active_game_label.setText(f"Actief venster: {title}")
         if fg:
             self.process_label.setText(f"Proces: {fg.process_name}")
+
+        # GPU short summary for gaming overlay
+        gpu_model = metrics.get('gpu_model')
+        core_clock = metrics.get('core_clock')
+        gpu_temp = metrics.get('gpu_temp')
+        power_draw = metrics.get('power_draw')
+        if gpu_model:
+            parts = [gpu_model]
+            if core_clock:
+                parts.append(f"{core_clock:.0f} MHz")
+            if gpu_temp is not None:
+                parts.append(f"{gpu_temp:.0f}°C")
+            if power_draw is not None:
+                parts.append(f"{power_draw:.1f} W")
+            self.gpu_summary_label.setText(" · ".join(parts))
+        else:
+            self.gpu_summary_label.setText("")
 
         self.cpu_card.setText(f"{metrics.get('cpu_percent', 0):.0f}%")
         self.gpu_card.setText(f"{metrics.get('gpu_percent', 0):.0f}%")
