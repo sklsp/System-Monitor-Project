@@ -66,8 +66,16 @@ class SystemMonitor(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("System Monitor — Gaming")
-        self.setGeometry(100, 100, 1100, 760)
-        self.setStyleSheet("background-color: #2b2b2b; color: #ffffff;")
+        self.setGeometry(100, 100, 1200, 780)
+
+        # Theme and palette
+        self.ui_accent = "#7DD3FC"  # subtle cyan accent
+        self.ui_warning = "#FFB86B"
+        self.ui_bg = "#141416"
+        self.ui_panel = "#1f1f23"
+        self.ui_muted = "#9AA3B2"
+        self.ui_fg = "#E6EEF3"
+        self.setStyleSheet(f"background-color: {self.ui_bg}; color: {self.ui_fg}; font-family: 'Segoe UI', Arial;")
 
         # Initialize data storage for charts
         self.cpu_history = []
@@ -112,20 +120,26 @@ class SystemMonitor(QMainWindow):
         content_widget = QWidget()
         main_layout = QVBoxLayout(content_widget)
 
-        title = QLabel("System Monitor — Gaming")
+        title = QLabel("System Monitor")
         title_font = QFont()
         title_font.setPointSize(18)
         title_font.setBold(True)
+        title_font.setLetterSpacing(QFont.AbsoluteSpacing, 0.5)
         title.setFont(title_font)
-        title.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(title)
+        title.setAlignment(Qt.AlignLeft)
+        title.setStyleSheet(f"color: {self.ui_fg}; padding: 8px 6px; margin-bottom: 6px;")
+
+        header_row = QHBoxLayout()
+        header_row.addWidget(title)
+        header_row.addStretch()
+        main_layout.addLayout(header_row)
 
         tabs = QTabWidget()
         self.main_tabs = tabs
-        tabs.setStyleSheet("""
-            QTabWidget::pane { border: 1px solid #555; }
-            QTabBar::tab { background-color: #3b3b3b; color: #fff; padding: 8px 20px; }
-            QTabBar::tab:selected { background-color: #555; }
+        tabs.setStyleSheet(f"""
+            QTabWidget::pane {{ border: 0px; background: transparent; }}
+            QTabBar::tab {{ background-color: {self.ui_panel}; color: {self.ui_muted}; padding: 8px 18px; margin: 4px; border-radius: 8px; }}
+            QTabBar::tab:selected {{ background-color: {self.ui_panel}; color: {self.ui_fg}; border: 1px solid rgba(125,211,252,0.12); }}
         """)
 
         self.gaming_tab = GamingTab(on_top_toggle=self.set_always_on_top)
@@ -144,14 +158,18 @@ class SystemMonitor(QMainWindow):
         outer_layout.addWidget(scroll_area)
 
     def create_chart(self, title, color, fixed_max=None):
-        container = QWidget()
+        from PyQt5.QtWidgets import QFrame
+
+        container = QFrame()
+        container.setObjectName('card')
+        container.setStyleSheet(f"QFrame#card {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 10px; }}")
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(6, 6, 6, 6)
         title_label = QLabel(title)
-        title_label.setStyleSheet("font-weight: bold; color: #ffffff;")
+        title_label.setStyleSheet(f"font-weight: 700; color: {self.ui_muted}; font-size: 12px;")
         layout.addWidget(title_label)
         graph_widget = GraphWidget(color, fixed_max=fixed_max)
-        graph_widget.setMinimumHeight(160)
+        graph_widget.setMinimumHeight(140)
         layout.addWidget(graph_widget)
         return container, graph_widget, None
 

@@ -21,8 +21,10 @@ class GraphWidget(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         rect = self.rect()
 
-        # Background
-        painter.fillRect(rect, QColor(34, 34, 34))
+        # Background with rounded panel
+        painter.setBrush(QColor(20, 20, 20))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(rect, 8, 8)
 
         if not self.history:
             return
@@ -41,16 +43,13 @@ class GraphWidget(QWidget):
         maxv = max(maxv, 1)
         value_range = maxv - minv if maxv != minv else maxv or 1
 
-        # Draw grid lines
-        grid_pen = QPen(QColor(80, 80, 80, 120))
+        # Draw subtle grid lines
+        grid_pen = QPen(QColor(255, 255, 255, 18))
         grid_pen.setWidth(1)
         painter.setPen(grid_pen)
         for i in range(1, 4):
             y = margin + i * (h / 4)
             painter.drawLine(margin, int(y), margin + w, int(y))
-        for i in range(1, 4):
-            x = margin + i * (w / 4)
-            painter.drawLine(int(x), margin, int(x), margin + h)
 
         # Build points
         points = []
@@ -60,48 +59,43 @@ class GraphWidget(QWidget):
             y = margin + h - normalized * h
             points.append((x, y))
 
-        # Draw fill below line
+        # Draw smooth curve using QPainterPath
         if len(points) > 1:
-            fill_path = QPainterPath()
-            fill_path.moveTo(points[0][0], rect.height() - margin)
-            for x, y in points:
-                fill_path.lineTo(x, y)
-            fill_path.lineTo(points[-1][0], rect.height() - margin)
-            fill_path.closeSubpath()
-            fill_color = QColor(self.color)
-            fill_color.setAlpha(80)
-            painter.fillPath(fill_path, fill_color)
+            path = QPainterPath()
+            path.moveTo(points[0][0], points[0][1])
+            for i in range(1, len(points)):
+                x0, y0 = points[i - 1]
+                x1, y1 = points[i]
+                mx = (x0 + x1) / 2
+                path.quadTo(x0, y0, mx, (y0 + y1) / 2)
+            path.lineTo(points[-1][0], points[-1][1])
 
-        # Draw line
-        pen = QPen(self.color)
-        pen.setWidth(2)
-        painter.setPen(pen)
-        for i in range(1, len(points)):
-            x1, y1 = points[i - 1]
-            x2, y2 = points[i]
-            painter.drawLine(int(x1), int(y1), int(x2), int(y2))
+            grad_color = QColor(self.color)
+            grad_color.setAlpha(90)
+            painter.fillPath(path, grad_color)
 
-        # Draw points
-        point_pen = QPen(Qt.white)
+            pen = QPen(self.color)
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.drawPath(path)
+
+        # Draw a subtle marker for the latest point
+        point_pen = QPen(self.color)
         point_pen.setWidth(3)
         painter.setPen(point_pen)
-        for x, y in points:
-            painter.drawPoint(int(x), int(y))
+        x, y = points[-1]
+        painter.drawEllipse(int(x) - 3, int(y) - 3, 6, 6)
 
         latest = self.history[-1]
-        painter.setPen(Qt.white)
-        painter.setFont(QFont("Arial", 9, QFont.Bold))
+        painter.setPen(QColor(230, 238, 243))
+        painter.setFont(QFont("Segoe UI", 9, QFont.Bold))
         painter.drawText(
-            QRect(margin + 4, margin + 2, 120, 18),
-            Qt.AlignLeft,
-            f"Now: {latest}{self.value_suffix}",
+            QRect(margin + 6, margin + 2, 180, 18), Qt.AlignLeft, f"Now: {latest}{self.value_suffix}"
         )
 
-        painter.setPen(QColor(180, 180, 180))
-        painter.setFont(QFont("Arial", 8))
+        painter.setPen(QColor(160, 170, 180))
+        painter.setFont(QFont("Segoe UI", 8))
         painter.drawText(QRect(margin, rect.height() - margin - 18, 100, 16), Qt.AlignLeft, "History")
         painter.drawText(
-            QRect(rect.width() - margin - 90, rect.height() - margin - 18, 90, 16),
-            Qt.AlignRight,
-            f"Max: {maxv}{self.value_suffix}",
+            QRect(rect.width() - margin - 140, rect.height() - margin - 18, 140, 16), Qt.AlignRight, f"Max: {maxv}{self.value_suffix}"
         )

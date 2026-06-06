@@ -5,3 +5,5 @@ __pycache__/
 .env
 .venv/
 venv/
+ui/__pycache__/dashboard.cpython-314.pyc
+ui/__pycache__/graphs.cpython-314.pyc
