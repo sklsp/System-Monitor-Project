@@ -1,7 +1,8 @@
-Bundled hardware sensor libraries (MPL-2.0, LibreHardwareMonitor project).
-Used only as a fallback when Windows built-in thermal APIs return no data.
-LibreHardwareMonitor.exe is NOT required.
+Bundled hardware sensor libraries (used as optional fallbacks).
+These were previously used to read sensors from third-party libraries.
+LibreHardwareMonitor support has been removed from this project due to antivirus
+false-positives; the application now relies on psutil, WMI and OpenHardwareMonitor
+when available.
 
-Files:
-  - LibreHardwareMonitorLib.dll
+Files that may have been present previously:
   - HidSharp.dll
