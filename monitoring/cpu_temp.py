@@ -1,19 +1,12 @@
-"""CPU temperature collection without running LibreHardwareMonitor.exe."""
+"""CPU temperature collection (LibreHardwareMonitor removed)."""
 
 from __future__ import annotations
 
-import base64
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import psutil
-
-HW_LIB_DIR = Path(__file__).resolve().parent / "libs" / "hardware"
-HW_DLL = HW_LIB_DIR / "LibreHardwareMonitorLib.dll"
-HW_PS1 = Path(__file__).with_name("read_cpu_temp.ps1")
-TEMP_OUTPUT = Path(tempfile.gettempdir()) / "system_monitor_cpu_temps.txt"
 
 CPU_SENSOR_KEYS = ("cpu", "core", "package", "tctl", "tdie", "ccd", "socket", "dies")
 GPU_SENSOR_KEYS = ("gpu", "graphics", "geforce", "radeon", "video", "vram")
@@ -161,7 +154,8 @@ def _from_external_monitor_wmi() -> list[float]:
         return []
 
     readings: list[float] = []
-    for namespace in (r"root\LibreHardwareMonitor", r"root\OpenHardwareMonitor"):
+    # Only check OpenHardwareMonitor namespace; LibreHardwareMonitor has been removed.
+    for namespace in (r"root\\OpenHardwareMonitor",):
         try:
             wmi_obj = win32com.client.GetObject(rf"winmgmts:\\.\{namespace}")
             query = "SELECT Name, Value FROM Sensor WHERE SensorType='Temperature'"
@@ -333,23 +327,6 @@ def get_cpu_temperature_readings() -> list[float]:
         readings = _from_external_monitor_wmi()
         if readings:
             return _unique(readings)
-
-        if _hardware_lib_dir() is not None:
-            if _is_process_elevated():
-                readings = _from_bundled_hardware_lib()
-                if readings:
-                    return _unique(readings)
-            else:
-                readings = _from_bundled_hardware_lib()
-                if readings:
-                    return _unique(readings)
-
-                if not _elevated_dll_attempted:
-                    _elevated_dll_attempted = True
-                    readings = _from_bundled_hardware_lib_elevated()
-                    if readings:
-                        return _unique(readings)
-
     return []
 
 
@@ -357,17 +334,6 @@ def temperature_status_hint(has_readings: bool = False) -> str | None:
     if has_readings:
         return None
     if sys.platform.startswith("win"):
-        if _hardware_lib_dir() is not None:
-            if _is_process_elevated():
-                return (
-                    "CPU-temperatuur niet beschikbaar. Sensoren geven geen data terug "
-                    "(vaak bij AMD — controleer of monitoring/libs/hardware de DLL-bestanden bevat)."
-                )
-            return (
-                "CPU-temperatuur niet beschikbaar. Start Cursor of System Monitor "
-                "als administrator (rechtermuiskop - Als administrator uitvoeren), niet alleen "
-                "de PowerShell-pop-up accepteren tijdens debuggen."
-            )
         return (
             "CPU-temperatuur niet beschikbaar op dit systeem via standaard Windows-sensoren."
         )

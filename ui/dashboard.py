@@ -39,7 +39,9 @@ except ModuleNotFoundError:
 
 try:
     import GPUtil
-except ModuleNotFoundError:
+except Exception:
+    # If GPUtil can't be imported for any reason (missing dependency like
+    # distutils), treat it as unavailable and fall back to nvidia-smi.
     GPUtil = None
 
 try:
@@ -758,7 +760,9 @@ class SystemMonitor(QMainWindow):
                     }
             except Exception:
                 pass
-        if not gpu_shown and do_slow_update:
+        # If GPUtil didn't provide GPU info, try nvidia-smi as a fallback.
+        # Run this whenever GPU isn't shown (keeps quick timeout to avoid blocking).
+        if not gpu_shown:
             try:
                 proc = subprocess.run(
                     [
