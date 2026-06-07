@@ -234,125 +234,62 @@ class SystemMonitor(QMainWindow):
                     break
 
     def create_overview_tab(self):
+        from PyQt5.QtWidgets import QFrame
+
         widget = QWidget()
         layout = QGridLayout()
-        layout.setSpacing(15)
+        layout.setSpacing(16)
 
-        # CPU Info
-        self.cpu_button = self.create_metric_button("CPU Usage", "CPU")
-        layout.addWidget(self.cpu_button, 0, 0)
+        # Overview card grid: show compact cards with metric, value and mini graph
+        cards = []
+
+        # CPU
         self.cpu_label = QLabel("0%")
-        self.cpu_label.setFont(QFont("Arial", 16, QFont.Bold))
-        layout.addWidget(self.cpu_label, 0, 1)
-        self.cpu_chart_container, self.cpu_chart_view, self.cpu_series = self.create_chart("CPU Usage", "#4CAF50", fixed_max=100)
-        if self.cpu_chart_container:
-            layout.addWidget(self.cpu_chart_container, 1, 0, 1, 2)
-        else:
-            self.cpu_bar = QProgressBar()
-            self.cpu_bar.setStyleSheet("""
-                QProgressBar {
-                    border: 2px solid #555;
-                    border-radius: 5px;
-                    background-color: #3b3b3b;
-                    height: 25px;
-                }
-                QProgressBar::chunk { background-color: #4CAF50; }
-            """)
-            layout.addWidget(self.cpu_bar, 1, 0, 1, 2)
+        self.cpu_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        cpu_card, self.cpu_chart_view, self.cpu_series = self.create_chart("CPU", "#4CAF50", fixed_max=100)
+        cpu_card_layout = cpu_card.layout()
+        cpu_card_layout.insertWidget(0, self.cpu_label)
+        layout.addWidget(cpu_card, 0, 0)
 
-        # Memory Info
-        self.memory_button = self.create_metric_button("Memory Usage", "RAM")
-        layout.addWidget(self.memory_button, 2, 0)
-        self.memory_label = QLabel("0%")
-        self.memory_label.setFont(QFont("Arial", 16, QFont.Bold))
-        layout.addWidget(self.memory_label, 2, 1)
-        self.memory_chart_container, self.memory_chart_view, self.memory_series = self.create_chart("Memory Usage", "#2196F3", fixed_max=100)
-        if self.memory_chart_container:
-            layout.addWidget(self.memory_chart_container, 3, 0, 1, 2)
-        else:
-            self.memory_bar = QProgressBar()
-            self.memory_bar.setStyleSheet("""
-                QProgressBar {
-                    border: 2px solid #555;
-                    border-radius: 5px;
-                    background-color: #3b3b3b;
-                    height: 25px;
-                }
-                QProgressBar::chunk { background-color: #2196F3; }
-            """)
-            layout.addWidget(self.memory_bar, 3, 0, 1, 2)
-
-        # GPU Info
-        self.gpu_button = self.create_metric_button("GPU Usage", "GPU")
-        layout.addWidget(self.gpu_button, 4, 0)
+        # GPU
         self.gpu_label = QLabel("N/A")
-        self.gpu_label.setFont(QFont("Arial", 16, QFont.Bold))
-        layout.addWidget(self.gpu_label, 4, 1)
-        self.gpu_chart_container, self.gpu_chart_view, self.gpu_series = self.create_chart("GPU Usage", "#9C27B0", fixed_max=100)
-        if self.gpu_chart_container:
-            layout.addWidget(self.gpu_chart_container, 5, 0, 1, 2)
-        else:
-            self.gpu_bar = QProgressBar()
-            self.gpu_bar.setStyleSheet("""
-                QProgressBar {
-                    border: 2px solid #555;
-                    border-radius: 5px;
-                    background-color: #3b3b3b;
-                    height: 25px;
-                }
-                QProgressBar::chunk { background-color: #9C27B0; }
-            """)
-            layout.addWidget(self.gpu_bar, 5, 0, 1, 2)
+        self.gpu_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        gpu_card, self.gpu_chart_view, self.gpu_series = self.create_chart("GPU", "#9C27B0", fixed_max=100)
+        gpu_card.layout().insertWidget(0, self.gpu_label)
+        layout.addWidget(gpu_card, 0, 1)
 
-        # Disk Usage Info
-        self.disk_button = self.create_metric_button("Disk Usage", "Disk")
-        layout.addWidget(self.disk_button, 6, 0)
+        # RAM
+        self.memory_label = QLabel("0%")
+        self.memory_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        ram_card, self.memory_chart_view, self.memory_series = self.create_chart("RAM", "#2196F3", fixed_max=100)
+        ram_card.layout().insertWidget(0, self.memory_label)
+        layout.addWidget(ram_card, 0, 2)
+
+        # Disk
         self.disk_label = QLabel("0%")
-        self.disk_label.setFont(QFont("Arial", 16, QFont.Bold))
-        layout.addWidget(self.disk_label, 6, 1)
-        self.disk_chart_container, self.disk_chart_view, self.disk_series = self.create_chart("Disk Usage", "#FF9800", fixed_max=100)
-        if self.disk_chart_container:
-            layout.addWidget(self.disk_chart_container, 7, 0, 1, 2)
-        else:
-            self.disk_bar = QProgressBar()
-            self.disk_bar.setStyleSheet("""
-                QProgressBar {
-                    border: 2px solid #555;
-                    border-radius: 5px;
-                    background-color: #3b3b3b;
-                    height: 25px;
-                }
-                QProgressBar::chunk { background-color: #FF9800; }
-            """)
-            layout.addWidget(self.disk_bar, 7, 0, 1, 2)
+        self.disk_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        disk_card, self.disk_chart_view, self.disk_series = self.create_chart("Disk", "#FF9800", fixed_max=100)
+        disk_card.layout().insertWidget(0, self.disk_label)
+        layout.addWidget(disk_card, 1, 0)
 
-        # Ethernet Info
-        self.eth_button = self.create_metric_button("Ethernet Usage", "Ethernet")
-        layout.addWidget(self.eth_button, 8, 0)
+        # Network
         self.eth_label = QLabel("0%")
-        self.eth_label.setFont(QFont("Arial", 16, QFont.Bold))
-        layout.addWidget(self.eth_label, 8, 1)
-        self.eth_chart_container, self.eth_chart_view, self.eth_series = self.create_chart("Ethernet Usage", "#00BCD4", fixed_max=100)
-        if self.eth_chart_container:
-            layout.addWidget(self.eth_chart_container, 9, 0, 1, 2)
-        else:
-            self.eth_bar = QProgressBar()
-            self.eth_bar.setStyleSheet("""
-                QProgressBar {
-                    border: 2px solid #555;
-                    border-radius: 5px;
-                    background-color: #3b3b3b;
-                    height: 25px;
-                }
-                QProgressBar::chunk { background-color: #00BCD4; }
-            """)
-            layout.addWidget(self.eth_bar, 9, 0, 1, 2)
+        self.eth_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        eth_card, self.eth_chart_view, self.eth_series = self.create_chart("Network", "#00BCD4", fixed_max=100)
+        eth_card.layout().insertWidget(0, self.eth_label)
+        layout.addWidget(eth_card, 1, 1)
 
-        # Process Info
-        layout.addWidget(QLabel("Process Count"), 10, 0)
+        # Processes small info card
+        proc_card = QFrame()
+        proc_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
+        proc_layout = QVBoxLayout(proc_card)
+        proc_title = QLabel("Processes")
+        proc_title.setStyleSheet(f"color: {self.ui_muted}; font-weight: 700;")
+        proc_layout.addWidget(proc_title)
         self.process_label = QLabel("0")
-        self.process_label.setFont(QFont("Arial", 16, QFont.Bold))
-        layout.addWidget(self.process_label, 10, 1)
+        self.process_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        proc_layout.addWidget(self.process_label)
+        layout.addWidget(proc_card, 1, 2)
 
         widget.setLayout(layout)
         return widget
@@ -382,7 +319,13 @@ class SystemMonitor(QMainWindow):
     def create_cpu_details_tab(self):
         widget = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(10)
+        main_layout.setSpacing(12)
+
+        # Card wrapper for CPU info
+        from PyQt5.QtWidgets import QFrame
+        cpu_card = QFrame()
+        cpu_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
+        cpu_layout = QVBoxLayout(cpu_card)
 
         info_layout = QGridLayout()
         info_layout.setSpacing(10)
@@ -420,7 +363,7 @@ class SystemMonitor(QMainWindow):
 
         self.cpu_temp_hint_label = QLabel()
         self.cpu_temp_hint_label.setWordWrap(True)
-        self.cpu_temp_hint_label.setStyleSheet("color: #ffb74d; font-size: 11px;")
+        self.cpu_temp_hint_label.setStyleSheet(f"color: {self.ui_warning}; font-size: 11px;")
         info_layout.addWidget(self.cpu_temp_hint_label, 8, 0, 1, 2)
 
         info_layout.addWidget(QLabel("Power Usage:"), 9, 0)
@@ -431,7 +374,8 @@ class SystemMonitor(QMainWindow):
         self.cpu_power_package_label = QLabel()
         info_layout.addWidget(self.cpu_power_package_label, 10, 1)
 
-        main_layout.addLayout(info_layout)
+        cpu_layout.addLayout(info_layout)
+        main_layout.addWidget(cpu_card)
 
         main_layout.addWidget(QLabel("Per-Core Usage:"))
         self.cpu_core_labels = []
@@ -465,145 +409,170 @@ class SystemMonitor(QMainWindow):
         
     def create_gpu_details_tab(self):
         widget = QWidget()
-        layout = QGridLayout()
+        layout = QVBoxLayout()
         layout.setSpacing(10)
-        layout.addWidget(QLabel("GPU Name:"), 0, 0)
+
+        from PyQt5.QtWidgets import QFrame
+        gpu_card = QFrame()
+        gpu_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
+        g_layout = QGridLayout(gpu_card)
+        g_layout.setSpacing(10)
+        g_layout.addWidget(QLabel("GPU Name:"), 0, 0)
         self.gpu_name_label = QLabel()
-        layout.addWidget(self.gpu_name_label, 0, 1)
-        
-        layout.addWidget(QLabel("Driver Version:"), 1, 0)
+        g_layout.addWidget(self.gpu_name_label, 0, 1)
+
+        g_layout.addWidget(QLabel("Driver Version:"), 1, 0)
         self.gpu_driver_label = QLabel()
-        layout.addWidget(self.gpu_driver_label, 1, 1)
+        g_layout.addWidget(self.gpu_driver_label, 1, 1)
 
-        layout.addWidget(QLabel("GPU Load:"), 2, 0)
+        g_layout.addWidget(QLabel("GPU Load:"), 2, 0)
         self.gpu_load_label = QLabel()
-        layout.addWidget(self.gpu_load_label, 2, 1)
-        
-        layout.addWidget(QLabel("Core Clock (MHz):"), 3, 0)
+        g_layout.addWidget(self.gpu_load_label, 2, 1)
+
+        g_layout.addWidget(QLabel("Core Clock (MHz):"), 3, 0)
         self.gpu_core_clock_label = QLabel()
-        layout.addWidget(self.gpu_core_clock_label, 3, 1)
+        g_layout.addWidget(self.gpu_core_clock_label, 3, 1)
 
-        layout.addWidget(QLabel("Memory Clock (MHz):"), 4, 0)
+        g_layout.addWidget(QLabel("Memory Clock (MHz):"), 4, 0)
         self.gpu_mem_clock_label = QLabel()
-        layout.addWidget(self.gpu_mem_clock_label, 4, 1)
+        g_layout.addWidget(self.gpu_mem_clock_label, 4, 1)
 
-        layout.addWidget(QLabel("Temperature:"), 5, 0)
+        g_layout.addWidget(QLabel("Temperature:"), 5, 0)
         self.gpu_temp_label = QLabel()
-        layout.addWidget(self.gpu_temp_label, 5, 1)
+        g_layout.addWidget(self.gpu_temp_label, 5, 1)
 
-        layout.addWidget(QLabel("Fan Speed:"), 6, 0)
+        g_layout.addWidget(QLabel("Fan Speed:"), 6, 0)
         self.gpu_fan_label = QLabel()
-        layout.addWidget(self.gpu_fan_label, 6, 1)
+        g_layout.addWidget(self.gpu_fan_label, 6, 1)
 
-        layout.addWidget(QLabel("Throttling:"), 7, 0)
+        g_layout.addWidget(QLabel("Throttling:"), 7, 0)
         self.gpu_throttle_label = QLabel()
-        layout.addWidget(self.gpu_throttle_label, 7, 1)
+        g_layout.addWidget(self.gpu_throttle_label, 7, 1)
 
-        layout.addWidget(QLabel("VRAM Usage:"), 8, 0)
+        g_layout.addWidget(QLabel("VRAM Usage:"), 8, 0)
         self.gpu_mem_label = QLabel()
-        layout.addWidget(self.gpu_mem_label, 8, 1)
+        g_layout.addWidget(self.gpu_mem_label, 8, 1)
 
-        layout.addWidget(QLabel("VRAM Percent:"), 9, 0)
+        g_layout.addWidget(QLabel("VRAM Percent:"), 9, 0)
         self.gpu_mem_percent_label = QLabel()
-        layout.addWidget(self.gpu_mem_percent_label, 9, 1)
+        g_layout.addWidget(self.gpu_mem_percent_label, 9, 1)
 
-        layout.addWidget(QLabel("Power Draw (W):"), 10, 0)
+        g_layout.addWidget(QLabel("Power Draw (W):"), 10, 0)
         self.gpu_power_draw_label = QLabel()
-        layout.addWidget(self.gpu_power_draw_label, 10, 1)
+        g_layout.addWidget(self.gpu_power_draw_label, 10, 1)
 
-        layout.addWidget(QLabel("Power Limit / Headroom:"), 11, 0)
+        g_layout.addWidget(QLabel("Power Limit / Headroom:"), 11, 0)
         self.gpu_power_limit_label = QLabel()
-        layout.addWidget(self.gpu_power_limit_label, 11, 1)
-        
+        g_layout.addWidget(self.gpu_power_limit_label, 11, 1)
+
+        layout.addWidget(gpu_card)
         widget.setLayout(layout)
         return widget
         
     def create_ram_details_tab(self):
         widget = QWidget()
-        layout = QGridLayout()
+        layout = QVBoxLayout()
         layout.setSpacing(10)
-        layout.addWidget(QLabel("Memory Usage:"), 0, 0)
+        from PyQt5.QtWidgets import QFrame
+        ram_card = QFrame()
+        ram_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
+        r_layout = QGridLayout(ram_card)
+        r_layout.setSpacing(10)
+        r_layout.addWidget(QLabel("Memory Usage:"), 0, 0)
         self.memory_percent_detail_label = QLabel()
-        layout.addWidget(self.memory_percent_detail_label, 0, 1)
-        
-        layout.addWidget(QLabel("Total:"), 1, 0)
+        r_layout.addWidget(self.memory_percent_detail_label, 0, 1)
+
+        r_layout.addWidget(QLabel("Total:"), 1, 0)
         self.memory_total_label = QLabel()
-        layout.addWidget(self.memory_total_label, 1, 1)
-        
-        layout.addWidget(QLabel("Used:"), 2, 0)
+        r_layout.addWidget(self.memory_total_label, 1, 1)
+
+        r_layout.addWidget(QLabel("Used:"), 2, 0)
         self.memory_used_label = QLabel()
-        layout.addWidget(self.memory_used_label, 2, 1)
-        
-        layout.addWidget(QLabel("Available:"), 3, 0)
+        r_layout.addWidget(self.memory_used_label, 2, 1)
+
+        r_layout.addWidget(QLabel("Available:"), 3, 0)
         self.memory_available_label = QLabel()
-        layout.addWidget(self.memory_available_label, 3, 1)
-        
-        layout.addWidget(QLabel("Swap Total:"), 4, 0)
+        r_layout.addWidget(self.memory_available_label, 3, 1)
+
+        r_layout.addWidget(QLabel("Swap Total:"), 4, 0)
         self.swap_total_label = QLabel()
-        layout.addWidget(self.swap_total_label, 4, 1)
-        
-        layout.addWidget(QLabel("Swap Used:"), 5, 0)
+        r_layout.addWidget(self.swap_total_label, 4, 1)
+
+        r_layout.addWidget(QLabel("Swap Used:"), 5, 0)
         self.swap_used_label = QLabel()
-        layout.addWidget(self.swap_used_label, 5, 1)
-        
+        r_layout.addWidget(self.swap_used_label, 5, 1)
+
+        layout.addWidget(ram_card)
         widget.setLayout(layout)
         return widget
         
     def create_disk_details_tab(self):
         widget = QWidget()
-        layout = QGridLayout()
+        layout = QVBoxLayout()
         layout.setSpacing(10)
-        layout.addWidget(QLabel("Disk Usage:"), 0, 0)
+        from PyQt5.QtWidgets import QFrame
+        disk_card = QFrame()
+        disk_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
+        d_layout = QGridLayout(disk_card)
+        d_layout.setSpacing(10)
+        d_layout.addWidget(QLabel("Disk Usage:"), 0, 0)
         self.disk_usage_detail_label = QLabel()
-        layout.addWidget(self.disk_usage_detail_label, 0, 1)
-        
-        layout.addWidget(QLabel("Total:"), 1, 0)
+        d_layout.addWidget(self.disk_usage_detail_label, 0, 1)
+
+        d_layout.addWidget(QLabel("Total:"), 1, 0)
         self.disk_total_label = QLabel()
-        layout.addWidget(self.disk_total_label, 1, 1)
-        
-        layout.addWidget(QLabel("Used:"), 2, 0)
+        d_layout.addWidget(self.disk_total_label, 1, 1)
+
+        d_layout.addWidget(QLabel("Used:"), 2, 0)
         self.disk_used_label = QLabel()
-        layout.addWidget(self.disk_used_label, 2, 1)
-        
-        layout.addWidget(QLabel("Free:"), 3, 0)
+        d_layout.addWidget(self.disk_used_label, 2, 1)
+
+        d_layout.addWidget(QLabel("Free:"), 3, 0)
         self.disk_free_label = QLabel()
-        layout.addWidget(self.disk_free_label, 3, 1)
-        
-        layout.addWidget(QLabel("Disk Busy:"), 4, 0)
+        d_layout.addWidget(self.disk_free_label, 3, 1)
+
+        d_layout.addWidget(QLabel("Disk Busy:"), 4, 0)
         self.disk_busy_detail_label = QLabel()
-        layout.addWidget(self.disk_busy_detail_label, 4, 1)
-        
-        layout.addWidget(QLabel("Throughput:"), 5, 0)
+        d_layout.addWidget(self.disk_busy_detail_label, 4, 1)
+
+        d_layout.addWidget(QLabel("Throughput:"), 5, 0)
         self.disk_io_detail_label = QLabel()
-        layout.addWidget(self.disk_io_detail_label, 5, 1)
-        
+        d_layout.addWidget(self.disk_io_detail_label, 5, 1)
+
+        layout.addWidget(disk_card)
         widget.setLayout(layout)
         return widget
         
     def create_ethernet_details_tab(self):
         widget = QWidget()
-        layout = QGridLayout()
+        layout = QVBoxLayout()
         layout.setSpacing(10)
-        layout.addWidget(QLabel("Interface:"), 0, 0)
+        from PyQt5.QtWidgets import QFrame
+        net_card = QFrame()
+        net_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
+        n_layout = QGridLayout(net_card)
+        n_layout.setSpacing(10)
+        n_layout.addWidget(QLabel("Interface:"), 0, 0)
         self.network_interface_label = QLabel()
-        layout.addWidget(self.network_interface_label, 0, 1)
-        
-        layout.addWidget(QLabel("Link Speed:"), 1, 0)
+        n_layout.addWidget(self.network_interface_label, 0, 1)
+
+        n_layout.addWidget(QLabel("Link Speed:"), 1, 0)
         self.network_speed_label = QLabel()
-        layout.addWidget(self.network_speed_label, 1, 1)
-        
-        layout.addWidget(QLabel("Upload:"), 2, 0)
+        n_layout.addWidget(self.network_speed_label, 1, 1)
+
+        n_layout.addWidget(QLabel("Upload:"), 2, 0)
         self.network_upload_label = QLabel()
-        layout.addWidget(self.network_upload_label, 2, 1)
-        
-        layout.addWidget(QLabel("Download:"), 3, 0)
+        n_layout.addWidget(self.network_upload_label, 2, 1)
+
+        n_layout.addWidget(QLabel("Download:"), 3, 0)
         self.network_download_label = QLabel()
-        layout.addWidget(self.network_download_label, 3, 1)
-        
-        layout.addWidget(QLabel("Usage:"), 4, 0)
+        n_layout.addWidget(self.network_download_label, 3, 1)
+
+        n_layout.addWidget(QLabel("Usage:"), 4, 0)
         self.network_usage_label = QLabel()
-        layout.addWidget(self.network_usage_label, 4, 1)
-        
+        n_layout.addWidget(self.network_usage_label, 4, 1)
+
+        layout.addWidget(net_card)
         widget.setLayout(layout)
         return widget
         
