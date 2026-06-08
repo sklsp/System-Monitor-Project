@@ -99,3 +99,64 @@ class GraphWidget(QWidget):
         painter.drawText(
             QRect(rect.width() - margin - 140, rect.height() - margin - 18, 140, 16), Qt.AlignRight, f"Max: {maxv}{self.value_suffix}"
         )
+
+
+class MiniSparklineWidget(QWidget):
+    """Compact sparkline for overview cards."""
+
+    def __init__(self, color="#7DD3FC", parent=None):
+        super().__init__(parent)
+        self.history = []
+        self.color = QColor(color)
+        self.setMinimumHeight(36)
+
+    def set_history(self, history):
+        self.history = list(history)[-40:]
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = self.rect()
+        painter.fillRect(rect, Qt.transparent)
+        if not self.history:
+            return
+
+        margin = 4
+        w = rect.width() - margin * 2
+        h = rect.height() - margin * 2
+        count = len(self.history)
+        maxv = max(self.history) if self.history else 1
+        minv = min(self.history) if self.history else 0
+        if maxv == minv:
+            maxv += 1
+        value_range = maxv - minv
+
+        points = []
+        for i, v in enumerate(self.history):
+            x = margin + (i / max(1, count - 1)) * w if count > 1 else margin + w
+            normalized = (v - minv) / value_range
+            y = margin + h - normalized * h
+            points.append((x, y))
+
+        if len(points) > 1:
+            path = QPainterPath()
+            path.moveTo(points[0][0], points[0][1])
+            for i in range(1, len(points)):
+                x0, y0 = points[i - 1]
+                x1, y1 = points[i]
+                mx = (x0 + x1) / 2
+                path.quadTo(x0, y0, mx, (y0 + y1) / 2)
+
+            pen = QPen(self.color)
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.drawPath(path)
+
+        # latest marker
+        x, y = points[-1]
+        painter.setPen(Qt.NoPen)
+        fill = QColor(self.color)
+        fill.setAlpha(220)
+        painter.setBrush(fill)
+        painter.drawEllipse(int(x) - 2, int(y) - 2, 4, 4)

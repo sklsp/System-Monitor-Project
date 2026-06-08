@@ -244,39 +244,90 @@ class SystemMonitor(QMainWindow):
         cards = []
 
         # CPU
+        from ui.graphs import MiniSparklineWidget
+
         self.cpu_label = QLabel("0%")
         self.cpu_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        self.cpu_trend = QLabel("")
+        self.cpu_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
         cpu_card, self.cpu_chart_view, self.cpu_series = self.create_chart("CPU", "#4CAF50", fixed_max=100)
-        cpu_card_layout = cpu_card.layout()
-        cpu_card_layout.insertWidget(0, self.cpu_label)
+        cpu_top = QWidget()
+        cpu_top_layout = QHBoxLayout(cpu_top)
+        cpu_top_layout.setContentsMargins(0, 0, 0, 0)
+        cpu_top_layout.addWidget(self.cpu_label)
+        cpu_top_layout.addStretch()
+        cpu_top_layout.addWidget(self.cpu_trend)
+        cpu_card.layout().insertWidget(0, cpu_top)
+        self.cpu_mini = MiniSparklineWidget("#4CAF50")
+        cpu_card.layout().insertWidget(1, self.cpu_mini)
         layout.addWidget(cpu_card, 0, 0)
 
         # GPU
         self.gpu_label = QLabel("N/A")
         self.gpu_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        self.gpu_trend = QLabel("")
+        self.gpu_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
         gpu_card, self.gpu_chart_view, self.gpu_series = self.create_chart("GPU", "#9C27B0", fixed_max=100)
-        gpu_card.layout().insertWidget(0, self.gpu_label)
+        gpu_top = QWidget()
+        gpu_top_layout = QHBoxLayout(gpu_top)
+        gpu_top_layout.setContentsMargins(0, 0, 0, 0)
+        gpu_top_layout.addWidget(self.gpu_label)
+        gpu_top_layout.addStretch()
+        gpu_top_layout.addWidget(self.gpu_trend)
+        gpu_card.layout().insertWidget(0, gpu_top)
+        self.gpu_mini = MiniSparklineWidget("#9C27B0")
+        gpu_card.layout().insertWidget(1, self.gpu_mini)
         layout.addWidget(gpu_card, 0, 1)
 
         # RAM
         self.memory_label = QLabel("0%")
         self.memory_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        self.memory_trend = QLabel("")
+        self.memory_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
         ram_card, self.memory_chart_view, self.memory_series = self.create_chart("RAM", "#2196F3", fixed_max=100)
-        ram_card.layout().insertWidget(0, self.memory_label)
+        ram_top = QWidget()
+        ram_top_layout = QHBoxLayout(ram_top)
+        ram_top_layout.setContentsMargins(0, 0, 0, 0)
+        ram_top_layout.addWidget(self.memory_label)
+        ram_top_layout.addStretch()
+        ram_top_layout.addWidget(self.memory_trend)
+        ram_card.layout().insertWidget(0, ram_top)
+        self.memory_mini = MiniSparklineWidget("#2196F3")
+        ram_card.layout().insertWidget(1, self.memory_mini)
         layout.addWidget(ram_card, 0, 2)
 
         # Disk
         self.disk_label = QLabel("0%")
         self.disk_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        self.disk_trend = QLabel("")
+        self.disk_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
         disk_card, self.disk_chart_view, self.disk_series = self.create_chart("Disk", "#FF9800", fixed_max=100)
-        disk_card.layout().insertWidget(0, self.disk_label)
+        disk_top = QWidget()
+        disk_top_layout = QHBoxLayout(disk_top)
+        disk_top_layout.setContentsMargins(0, 0, 0, 0)
+        disk_top_layout.addWidget(self.disk_label)
+        disk_top_layout.addStretch()
+        disk_top_layout.addWidget(self.disk_trend)
+        disk_card.layout().insertWidget(0, disk_top)
+        self.disk_mini = MiniSparklineWidget("#FF9800")
+        disk_card.layout().insertWidget(1, self.disk_mini)
         layout.addWidget(disk_card, 1, 0)
 
         # Network
         self.eth_label = QLabel("0%")
         self.eth_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        self.eth_trend = QLabel("")
+        self.eth_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
         eth_card, self.eth_chart_view, self.eth_series = self.create_chart("Network", "#00BCD4", fixed_max=100)
-        eth_card.layout().insertWidget(0, self.eth_label)
+        eth_top = QWidget()
+        eth_top_layout = QHBoxLayout(eth_top)
+        eth_top_layout.setContentsMargins(0, 0, 0, 0)
+        eth_top_layout.addWidget(self.eth_label)
+        eth_top_layout.addStretch()
+        eth_top_layout.addWidget(self.eth_trend)
+        eth_card.layout().insertWidget(0, eth_top)
+        self.eth_mini = MiniSparklineWidget("#00BCD4")
+        eth_card.layout().insertWidget(1, self.eth_mini)
         layout.addWidget(eth_card, 1, 1)
 
         # Processes small info card
@@ -587,6 +638,26 @@ class SystemMonitor(QMainWindow):
         self.cpu_history.append(cpu_percent)
         self.cpu_history = self.cpu_history[-self.max_history:]
         self.update_series(self.cpu_series if self.cpu_series is not None else self.cpu_chart_view, self.cpu_history)
+        # update mini sparkline and trend
+        try:
+            if hasattr(self, 'cpu_mini'):
+                self.cpu_mini.set_history(self.cpu_history)
+            if hasattr(self, 'cpu_trend'):
+                if len(self.cpu_history) >= 2:
+                    prev = self.cpu_history[-2]
+                    curr = self.cpu_history[-1]
+                    diff = curr - prev
+                    if abs(diff) < 0.5:
+                        self.cpu_trend.setText("→")
+                        self.cpu_trend.setStyleSheet(f"color: {self.ui_muted}; font-weight: 700;")
+                    elif diff > 0:
+                        self.cpu_trend.setText(f"▲ {diff:.1f}%")
+                        self.cpu_trend.setStyleSheet("color: #FF6B6B; font-weight: 700;")
+                    else:
+                        self.cpu_trend.setText(f"▼ {abs(diff):.1f}%")
+                        self.cpu_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
+        except Exception:
+            pass
         if hasattr(self, 'cpu_bar'):
             self.cpu_bar.setValue(int(cpu_percent))
 
@@ -657,6 +728,24 @@ class SystemMonitor(QMainWindow):
         self.memory_history.append(memory_percent)
         self.memory_history = self.memory_history[-self.max_history:]
         self.update_series(self.memory_series if self.memory_series is not None else self.memory_chart_view, self.memory_history)
+        try:
+            if hasattr(self, 'memory_mini'):
+                self.memory_mini.set_history(self.memory_history)
+            if hasattr(self, 'memory_trend') and len(self.memory_history) >= 2:
+                prev = self.memory_history[-2]
+                curr = self.memory_history[-1]
+                diff = curr - prev
+                if abs(diff) < 0.5:
+                    self.memory_trend.setText("→")
+                    self.memory_trend.setStyleSheet(f"color: {self.ui_muted}; font-weight: 700;")
+                elif diff > 0:
+                    self.memory_trend.setText(f"▲ {diff:.1f}%")
+                    self.memory_trend.setStyleSheet("color: #FF6B6B; font-weight: 700;")
+                else:
+                    self.memory_trend.setText(f"▼ {abs(diff):.1f}%")
+                    self.memory_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
+        except Exception:
+            pass
         if hasattr(self, 'memory_bar'):
             self.memory_bar.setValue(int(memory_percent))
         
@@ -692,6 +781,24 @@ class SystemMonitor(QMainWindow):
         self.disk_history.append(disk_write_percent)
         self.disk_history = self.disk_history[-self.max_history:]
         self.update_series(self.disk_series if self.disk_series is not None else self.disk_chart_view, self.disk_history)
+        try:
+            if hasattr(self, 'disk_mini'):
+                self.disk_mini.set_history(self.disk_history)
+            if hasattr(self, 'disk_trend') and len(self.disk_history) >= 2:
+                prev = self.disk_history[-2]
+                curr = self.disk_history[-1]
+                diff = curr - prev
+                if abs(diff) < 0.5:
+                    self.disk_trend.setText("→")
+                    self.disk_trend.setStyleSheet(f"color: {self.ui_muted}; font-weight: 700;")
+                elif diff > 0:
+                    self.disk_trend.setText(f"▲ {diff:.1f}%")
+                    self.disk_trend.setStyleSheet("color: #FF6B6B; font-weight: 700;")
+                else:
+                    self.disk_trend.setText(f"▼ {abs(diff):.1f}%")
+                    self.disk_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
+        except Exception:
+            pass
         if hasattr(self, 'disk_bar'):
             self.disk_bar.setValue(disk_write_percent)
             self.disk_bar.setFormat(f"{disk_write_percent}% ({total_mbps:.2f} MB/s)")
@@ -722,6 +829,24 @@ class SystemMonitor(QMainWindow):
         self.eth_history.append(eth_percent)
         self.eth_history = self.eth_history[-self.max_history:]
         self.update_series(self.eth_series if self.eth_series is not None else self.eth_chart_view, self.eth_history)
+        try:
+            if hasattr(self, 'eth_mini'):
+                self.eth_mini.set_history(self.eth_history)
+            if hasattr(self, 'eth_trend') and len(self.eth_history) >= 2:
+                prev = self.eth_history[-2]
+                curr = self.eth_history[-1]
+                diff = curr - prev
+                if abs(diff) < 0.5:
+                    self.eth_trend.setText("→")
+                    self.eth_trend.setStyleSheet(f"color: {self.ui_muted}; font-weight: 700;")
+                elif diff > 0:
+                    self.eth_trend.setText(f"▲ {diff:.1f}%")
+                    self.eth_trend.setStyleSheet("color: #FF6B6B; font-weight: 700;")
+                else:
+                    self.eth_trend.setText(f"▼ {abs(diff):.1f}%")
+                    self.eth_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
+        except Exception:
+            pass
         if hasattr(self, 'eth_bar'):
             self.eth_bar.setValue(eth_percent)
             self.eth_bar.setFormat(f"{eth_percent}% (↑{eth_send_mbps:.1f} Mb/s ↓{eth_recv_mbps:.1f} Mb/s)")
@@ -978,6 +1103,24 @@ class SystemMonitor(QMainWindow):
         self.gpu_history.append(gpu_load)
         self.gpu_history = self.gpu_history[-self.max_history:]
         self.update_series(self.gpu_series if self.gpu_series is not None else self.gpu_chart_view, self.gpu_history)
+        try:
+            if hasattr(self, 'gpu_mini'):
+                self.gpu_mini.set_history(self.gpu_history)
+            if hasattr(self, 'gpu_trend') and len(self.gpu_history) >= 2:
+                prev = self.gpu_history[-2]
+                curr = self.gpu_history[-1]
+                diff = curr - prev
+                if abs(diff) < 0.5:
+                    self.gpu_trend.setText("→")
+                    self.gpu_trend.setStyleSheet(f"color: {self.ui_muted}; font-weight: 700;")
+                elif diff > 0:
+                    self.gpu_trend.setText(f"▲ {diff:.1f}%")
+                    self.gpu_trend.setStyleSheet("color: #FF6B6B; font-weight: 700;")
+                else:
+                    self.gpu_trend.setText(f"▼ {abs(diff):.1f}%")
+                    self.gpu_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
+        except Exception:
+            pass
         
         # Processes
         process_count = len(psutil.pids())
