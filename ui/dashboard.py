@@ -157,21 +157,32 @@ class SystemMonitor(QMainWindow):
         outer_layout = QVBoxLayout(central_widget)
         outer_layout.addWidget(scroll_area)
 
-    def create_chart(self, title, color, fixed_max=None):
+    def create_chart(self, title, color, fixed_max=None, compact=False):
         from PyQt5.QtWidgets import QFrame
+        from ui.graphs import MiniSparklineWidget
 
         container = QFrame()
         container.setObjectName('card')
-        container.setStyleSheet(f"QFrame#card {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 10px; }}")
+        container.setStyleSheet(f"QFrame#card {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 8px; }}")
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(6)
         title_label = QLabel(title)
         title_label.setStyleSheet(f"font-weight: 700; color: {self.ui_muted}; font-size: 12px;")
         layout.addWidget(title_label)
-        graph_widget = GraphWidget(color, fixed_max=fixed_max)
-        graph_widget.setMinimumHeight(140)
-        layout.addWidget(graph_widget)
-        return container, graph_widget, None
+
+        if compact:
+            # compact mode: small sparkline widget for overview cards
+            spark = MiniSparklineWidget(color)
+            spark.setMinimumHeight(36)
+            layout.addWidget(spark)
+            # keep a placeholder GraphWidget return value None for compatibility
+            return container, spark, None
+        else:
+            graph_widget = GraphWidget(color, fixed_max=fixed_max)
+            graph_widget.setMinimumHeight(140)
+            layout.addWidget(graph_widget)
+            return container, graph_widget, None
 
     def update_series(self, chart_or_series, history):
         if chart_or_series is None:
@@ -238,7 +249,8 @@ class SystemMonitor(QMainWindow):
 
         widget = QWidget()
         layout = QGridLayout()
-        layout.setSpacing(16)
+        layout.setSpacing(12)
+        layout.setContentsMargins(6, 6, 6, 6)
 
         # Overview card grid: show compact cards with metric, value and mini graph
         cards = []
@@ -250,7 +262,7 @@ class SystemMonitor(QMainWindow):
         self.cpu_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
         self.cpu_trend = QLabel("")
         self.cpu_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
-        cpu_card, self.cpu_chart_view, self.cpu_series = self.create_chart("CPU", "#4CAF50", fixed_max=100)
+        cpu_card, self.cpu_chart_view, self.cpu_series = self.create_chart("CPU", "#4CAF50", fixed_max=100, compact=True)
         cpu_top = QWidget()
         cpu_top_layout = QHBoxLayout(cpu_top)
         cpu_top_layout.setContentsMargins(0, 0, 0, 0)
@@ -260,6 +272,8 @@ class SystemMonitor(QMainWindow):
         cpu_card.layout().insertWidget(0, cpu_top)
         self.cpu_mini = MiniSparklineWidget("#4CAF50")
         cpu_card.layout().insertWidget(1, self.cpu_mini)
+        cpu_card.setMaximumHeight(110)
+        cpu_card.setMinimumWidth(260)
         layout.addWidget(cpu_card, 0, 0)
 
         # GPU
@@ -267,7 +281,7 @@ class SystemMonitor(QMainWindow):
         self.gpu_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
         self.gpu_trend = QLabel("")
         self.gpu_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
-        gpu_card, self.gpu_chart_view, self.gpu_series = self.create_chart("GPU", "#9C27B0", fixed_max=100)
+        gpu_card, self.gpu_chart_view, self.gpu_series = self.create_chart("GPU", "#9C27B0", fixed_max=100, compact=True)
         gpu_top = QWidget()
         gpu_top_layout = QHBoxLayout(gpu_top)
         gpu_top_layout.setContentsMargins(0, 0, 0, 0)
@@ -277,6 +291,8 @@ class SystemMonitor(QMainWindow):
         gpu_card.layout().insertWidget(0, gpu_top)
         self.gpu_mini = MiniSparklineWidget("#9C27B0")
         gpu_card.layout().insertWidget(1, self.gpu_mini)
+        gpu_card.setMaximumHeight(110)
+        gpu_card.setMinimumWidth(260)
         layout.addWidget(gpu_card, 0, 1)
 
         # RAM
@@ -284,7 +300,7 @@ class SystemMonitor(QMainWindow):
         self.memory_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
         self.memory_trend = QLabel("")
         self.memory_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
-        ram_card, self.memory_chart_view, self.memory_series = self.create_chart("RAM", "#2196F3", fixed_max=100)
+        ram_card, self.memory_chart_view, self.memory_series = self.create_chart("RAM", "#2196F3", fixed_max=100, compact=True)
         ram_top = QWidget()
         ram_top_layout = QHBoxLayout(ram_top)
         ram_top_layout.setContentsMargins(0, 0, 0, 0)
@@ -294,6 +310,8 @@ class SystemMonitor(QMainWindow):
         ram_card.layout().insertWidget(0, ram_top)
         self.memory_mini = MiniSparklineWidget("#2196F3")
         ram_card.layout().insertWidget(1, self.memory_mini)
+        ram_card.setMaximumHeight(110)
+        ram_card.setMinimumWidth(260)
         layout.addWidget(ram_card, 0, 2)
 
         # Disk
@@ -301,7 +319,7 @@ class SystemMonitor(QMainWindow):
         self.disk_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
         self.disk_trend = QLabel("")
         self.disk_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
-        disk_card, self.disk_chart_view, self.disk_series = self.create_chart("Disk", "#FF9800", fixed_max=100)
+        disk_card, self.disk_chart_view, self.disk_series = self.create_chart("Disk", "#FF9800", fixed_max=100, compact=True)
         disk_top = QWidget()
         disk_top_layout = QHBoxLayout(disk_top)
         disk_top_layout.setContentsMargins(0, 0, 0, 0)
@@ -311,6 +329,8 @@ class SystemMonitor(QMainWindow):
         disk_card.layout().insertWidget(0, disk_top)
         self.disk_mini = MiniSparklineWidget("#FF9800")
         disk_card.layout().insertWidget(1, self.disk_mini)
+        disk_card.setMaximumHeight(110)
+        disk_card.setMinimumWidth(260)
         layout.addWidget(disk_card, 1, 0)
 
         # Network
@@ -318,7 +338,7 @@ class SystemMonitor(QMainWindow):
         self.eth_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
         self.eth_trend = QLabel("")
         self.eth_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
-        eth_card, self.eth_chart_view, self.eth_series = self.create_chart("Network", "#00BCD4", fixed_max=100)
+        eth_card, self.eth_chart_view, self.eth_series = self.create_chart("Network", "#00BCD4", fixed_max=100, compact=True)
         eth_top = QWidget()
         eth_top_layout = QHBoxLayout(eth_top)
         eth_top_layout.setContentsMargins(0, 0, 0, 0)
@@ -328,6 +348,8 @@ class SystemMonitor(QMainWindow):
         eth_card.layout().insertWidget(0, eth_top)
         self.eth_mini = MiniSparklineWidget("#00BCD4")
         eth_card.layout().insertWidget(1, self.eth_mini)
+        eth_card.setMaximumHeight(110)
+        eth_card.setMinimumWidth(260)
         layout.addWidget(eth_card, 1, 1)
 
         # Processes small info card
@@ -340,6 +362,8 @@ class SystemMonitor(QMainWindow):
         self.process_label = QLabel("0")
         self.process_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
         proc_layout.addWidget(self.process_label)
+        proc_card.setMaximumHeight(110)
+        proc_card.setMinimumWidth(260)
         layout.addWidget(proc_card, 1, 2)
 
         widget.setLayout(layout)
