@@ -60,6 +60,9 @@ from ui.graphs import GraphWidget
 from ui.gaming_tab import GamingTab
 from ui.dashboard.overview import build_overview
 from ui.dashboard.details import build_details
+from ui.dashboard.state import init_state
+from ui.dashboard import navigation as navigation
+from ui.dashboard.controller import start_timers
 
 
 class SystemMonitor(QMainWindow):
@@ -85,6 +88,7 @@ class SystemMonitor(QMainWindow):
         self.eth_history = []
         core_count = psutil.cpu_count(logical=True) or 1
         self.cpu_core_histories = [[] for _ in range(core_count)]
+        self.cpu_core_count = core_count
         self.cpu_temp_history = []
         self.max_history = 30
         self.prev_disk_io = psutil.disk_io_counters()
@@ -101,14 +105,13 @@ class SystemMonitor(QMainWindow):
         self.ping_monitor = PingMonitor()
         psutil.cpu_percent(interval=None)
 
+        # initialize UI and runtime state
+        init_state(self, max_history=self.max_history)
         self.init_ui()
         self.ping_monitor.start()
         self.start_cpu_temp_background_refresh()
-
-        # Timer for updating info
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_system_info)
-        self.timer.start(2500)
+        # start controller-managed timers
+        start_timers(self)
 
     def init_ui(self):
         central_widget = QWidget()
@@ -158,51 +161,12 @@ class SystemMonitor(QMainWindow):
         outer_layout.addWidget(scroll_area)
 
     def create_chart(self, title, color, fixed_max=None, compact=False):
-        from PyQt5.QtWidgets import QFrame
-        from ui.graphs import MiniSparklineWidget
-
-        container = QFrame()
-        container.setObjectName('card')
-        container.setStyleSheet(f"QFrame#card {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 8px; }}")
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(6)
-        title_label = QLabel(title)
-        title_label.setStyleSheet(f"font-weight: 700; color: {self.ui_muted}; font-size: 12px;")
-        layout.addWidget(title_label)
-
-        if compact:
-            # compact mode: small sparkline widget for overview cards
-            spark = MiniSparklineWidget(color)
-            spark.setMinimumHeight(36)
-            layout.addWidget(spark)
-            # keep a placeholder GraphWidget return value None for compatibility
-            return container, spark, None
-        else:
-            graph_widget = GraphWidget(color, fixed_max=fixed_max)
-            graph_widget.setMinimumHeight(140)
-            layout.addWidget(graph_widget)
-            return container, graph_widget, None
+        from ui.components.graph_card import create_chart as _create_chart
+        return _create_chart(self, title, color, fixed_max=fixed_max, compact=compact)
 
     def update_series(self, chart_or_series, history):
-        if chart_or_series is None:
-            return
-        if isinstance(chart_or_series, GraphWidget):
-            chart_or_series.set_history(history)
-            return
-        try:
-            series = chart_or_series
-            series.clear()
-            for i, value in enumerate(history):
-                series.append(i, value)
-            try:
-                chart = series.chart()
-                if chart is not None:
-                    chart.update()
-            except Exception:
-                pass
-        except Exception:
-            return
+        from ui.components.graph_card import update_series as _update_series
+        return _update_series(chart_or_series, history)
 
     def start_cpu_temp_background_refresh(self):
         if self.cpu_temp_thread is not None and self.cpu_temp_thread.is_alive():
@@ -225,280 +189,12 @@ class SystemMonitor(QMainWindow):
         self.show()
 
     def create_metric_button(self, text, details_tab_name):
-        button = QPushButton(text)
-        button.setCursor(Qt.PointingHandCursor)
-        button.setStyleSheet(
-            "QPushButton { border: none; color: #ffffff; text-align: left; font-weight: bold; font-size: 14px; }"
-            "QPushButton:hover { color: #9cf; }"
-        )
-        button.setFlat(True)
-        button.clicked.connect(lambda: self.navigate_to_details_tab(details_tab_name))
-        return button
+        return navigation.create_metric_button(self, text, details_tab_name)
 
     def navigate_to_details_tab(self, tab_name):
-        if hasattr(self, 'main_tabs'):
-            self.main_tabs.setCurrentIndex(1)
-        if hasattr(self, 'details_tabs'):
-            for index in range(self.details_tabs.count()):
-                if self.details_tabs.tabText(index) == tab_name:
-                    self.details_tabs.setCurrentIndex(index)
-                    break
+        return navigation.navigate_to_details_tab(self, tab_name)
 
-    # The detailed tab builders remain methods used by build_details()
-    def create_cpu_details_tab(self):
-        widget = QWidget()
-        main_layout = QVBoxLayout()
-        main_layout.setSpacing(12)
-
-        # Card wrapper for CPU info
-        cpu_card = QFrame()
-        cpu_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
-        cpu_layout = QVBoxLayout(cpu_card)
-
-        info_layout = QGridLayout()
-        info_layout.setSpacing(10)
-        info_layout.addWidget(QLabel("CPU Load:"), 0, 0)
-        self.cpu_load_detail_label = QLabel()
-        info_layout.addWidget(self.cpu_load_detail_label, 0, 1)
-
-        info_layout.addWidget(QLabel("Physical Cores:"), 1, 0)
-        self.cpu_physical_label = QLabel()
-        info_layout.addWidget(self.cpu_physical_label, 1, 1)
-
-        info_layout.addWidget(QLabel("Logical Cores:"), 2, 0)
-        self.cpu_logical_label = QLabel()
-        info_layout.addWidget(self.cpu_logical_label, 2, 1)
-
-        info_layout.addWidget(QLabel("Current Frequency:"), 3, 0)
-        self.cpu_current_freq_label = QLabel()
-        info_layout.addWidget(self.cpu_current_freq_label, 3, 1)
-
-        info_layout.addWidget(QLabel("Boost Frequency:"), 4, 0)
-        self.cpu_boost_freq_label = QLabel()
-        info_layout.addWidget(self.cpu_boost_freq_label, 4, 1)
-
-        info_layout.addWidget(QLabel("Throttling:"), 5, 0)
-        self.cpu_throttling_label = QLabel()
-        info_layout.addWidget(self.cpu_throttling_label, 5, 1)
-
-        info_layout.addWidget(QLabel("CPU Temp Max:"), 6, 0)
-        self.cpu_temp_max_label = QLabel()
-        info_layout.addWidget(self.cpu_temp_max_label, 6, 1)
-
-        info_layout.addWidget(QLabel("CPU Temp Avg:"), 7, 0)
-        self.cpu_temp_avg_label = QLabel()
-        info_layout.addWidget(self.cpu_temp_avg_label, 7, 1)
-
-        self.cpu_temp_hint_label = QLabel()
-        self.cpu_temp_hint_label.setWordWrap(True)
-        self.cpu_temp_hint_label.setStyleSheet(f"color: {self.ui_warning}; font-size: 11px;")
-        info_layout.addWidget(self.cpu_temp_hint_label, 8, 0, 1, 2)
-
-        info_layout.addWidget(QLabel("Power Usage:"), 9, 0)
-        self.cpu_power_watts_label = QLabel()
-        info_layout.addWidget(self.cpu_power_watts_label, 9, 1)
-
-        info_layout.addWidget(QLabel("Package Power:"), 10, 0)
-        self.cpu_power_package_label = QLabel()
-        info_layout.addWidget(self.cpu_power_package_label, 10, 1)
-
-        cpu_layout.addLayout(info_layout)
-        main_layout.addWidget(cpu_card)
-
-        main_layout.addWidget(QLabel("Per-Core Usage:"))
-        self.cpu_core_labels = []
-        self.cpu_core_graphs = []
-        core_count = len(self.cpu_core_histories)
-        core_colors = ["#4CAF50", "#66BB6A", "#81C784", "#43A047", "#2E7D32", "#1B5E20"]
-        for i in range(core_count):
-            row_widget = QWidget()
-            row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(0, 2, 0, 2)
-            row_layout.setSpacing(8)
-            core_label = QLabel(f"Core {i + 1}: 0%")
-            core_label.setFont(QFont("Arial", 11))
-            core_label.setMinimumWidth(95)
-            self.cpu_core_labels.append(core_label)
-            core_graph = GraphWidget(core_colors[i % len(core_colors)], fixed_max=100)
-            core_graph.setMinimumHeight(52)
-            core_graph.setMaximumHeight(60)
-            self.cpu_core_graphs.append(core_graph)
-            row_layout.addWidget(core_label)
-            row_layout.addWidget(core_graph, 1)
-            main_layout.addWidget(row_widget)
-
-        main_layout.addWidget(QLabel("CPU Temperature Graph:"))
-        self.cpu_temp_graph = GraphWidget()
-        self.cpu_temp_graph.setMinimumHeight(160)
-        main_layout.addWidget(self.cpu_temp_graph)
-
-        widget.setLayout(main_layout)
-        return widget
-
-    def create_gpu_details_tab(self):
-        widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setSpacing(10)
-
-        gpu_card = QFrame()
-        gpu_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
-        g_layout = QGridLayout(gpu_card)
-        g_layout.setSpacing(10)
-        g_layout.addWidget(QLabel("GPU Name:"), 0, 0)
-        self.gpu_name_label = QLabel()
-        g_layout.addWidget(self.gpu_name_label, 0, 1)
-
-        g_layout.addWidget(QLabel("Driver Version:"), 1, 0)
-        self.gpu_driver_label = QLabel()
-        g_layout.addWidget(self.gpu_driver_label, 1, 1)
-
-        g_layout.addWidget(QLabel("GPU Load:"), 2, 0)
-        self.gpu_load_label = QLabel()
-        g_layout.addWidget(self.gpu_load_label, 2, 1)
-
-        g_layout.addWidget(QLabel("Core Clock (MHz):"), 3, 0)
-        self.gpu_core_clock_label = QLabel()
-        g_layout.addWidget(self.gpu_core_clock_label, 3, 1)
-
-        g_layout.addWidget(QLabel("Memory Clock (MHz):"), 4, 0)
-        self.gpu_mem_clock_label = QLabel()
-        g_layout.addWidget(self.gpu_mem_clock_label, 4, 1)
-
-        g_layout.addWidget(QLabel("Temperature:"), 5, 0)
-        self.gpu_temp_label = QLabel()
-        g_layout.addWidget(self.gpu_temp_label, 5, 1)
-
-        g_layout.addWidget(QLabel("Fan Speed:"), 6, 0)
-        self.gpu_fan_label = QLabel()
-        g_layout.addWidget(self.gpu_fan_label, 6, 1)
-
-        g_layout.addWidget(QLabel("Throttling:"), 7, 0)
-        self.gpu_throttle_label = QLabel()
-        g_layout.addWidget(self.gpu_throttle_label, 7, 1)
-
-        g_layout.addWidget(QLabel("VRAM Usage:"), 8, 0)
-        self.gpu_mem_label = QLabel()
-        g_layout.addWidget(self.gpu_mem_label, 8, 1)
-
-        g_layout.addWidget(QLabel("VRAM Percent:"), 9, 0)
-        self.gpu_mem_percent_label = QLabel()
-        g_layout.addWidget(self.gpu_mem_percent_label, 9, 1)
-
-        g_layout.addWidget(QLabel("Power Draw (W):"), 10, 0)
-        self.gpu_power_draw_label = QLabel()
-        g_layout.addWidget(self.gpu_power_draw_label, 10, 1)
-
-        g_layout.addWidget(QLabel("Power Limit / Headroom:"), 11, 0)
-        self.gpu_power_limit_label = QLabel()
-        g_layout.addWidget(self.gpu_power_limit_label, 11, 1)
-
-        layout.addWidget(gpu_card)
-        widget.setLayout(layout)
-        return widget
-
-    def create_ram_details_tab(self):
-        widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setSpacing(10)
-        ram_card = QFrame()
-        ram_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
-        r_layout = QGridLayout(ram_card)
-        r_layout.setSpacing(10)
-        r_layout.addWidget(QLabel("Memory Usage:"), 0, 0)
-        self.memory_percent_detail_label = QLabel()
-        r_layout.addWidget(self.memory_percent_detail_label, 0, 1)
-
-        r_layout.addWidget(QLabel("Total:"), 1, 0)
-        self.memory_total_label = QLabel()
-        r_layout.addWidget(self.memory_total_label, 1, 1)
-
-        r_layout.addWidget(QLabel("Used:"), 2, 0)
-        self.memory_used_label = QLabel()
-        r_layout.addWidget(self.memory_used_label, 2, 1)
-
-        r_layout.addWidget(QLabel("Available:"), 3, 0)
-        self.memory_available_label = QLabel()
-        r_layout.addWidget(self.memory_available_label, 3, 1)
-
-        r_layout.addWidget(QLabel("Swap Total:"), 4, 0)
-        self.swap_total_label = QLabel()
-        r_layout.addWidget(self.swap_total_label, 4, 1)
-
-        r_layout.addWidget(QLabel("Swap Used:"), 5, 0)
-        self.swap_used_label = QLabel()
-        r_layout.addWidget(self.swap_used_label, 5, 1)
-
-        layout.addWidget(ram_card)
-        widget.setLayout(layout)
-        return widget
-
-    def create_disk_details_tab(self):
-        widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setSpacing(10)
-        disk_card = QFrame()
-        disk_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
-        d_layout = QGridLayout(disk_card)
-        d_layout.setSpacing(10)
-        d_layout.addWidget(QLabel("Disk Usage:"), 0, 0)
-        self.disk_usage_detail_label = QLabel()
-        d_layout.addWidget(self.disk_usage_detail_label, 0, 1)
-
-        d_layout.addWidget(QLabel("Total:"), 1, 0)
-        self.disk_total_label = QLabel()
-        d_layout.addWidget(self.disk_total_label, 1, 1)
-
-        d_layout.addWidget(QLabel("Used:"), 2, 0)
-        self.disk_used_label = QLabel()
-        d_layout.addWidget(self.disk_used_label, 2, 1)
-
-        d_layout.addWidget(QLabel("Free:"), 3, 0)
-        self.disk_free_label = QLabel()
-        d_layout.addWidget(self.disk_free_label, 3, 1)
-
-        d_layout.addWidget(QLabel("Disk Busy:"), 4, 0)
-        self.disk_busy_detail_label = QLabel()
-        d_layout.addWidget(self.disk_busy_detail_label, 4, 1)
-
-        d_layout.addWidget(QLabel("Throughput:"), 5, 0)
-        self.disk_io_detail_label = QLabel()
-        d_layout.addWidget(self.disk_io_detail_label, 5, 1)
-
-        layout.addWidget(disk_card)
-        widget.setLayout(layout)
-        return widget
-
-    def create_ethernet_details_tab(self):
-        widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setSpacing(10)
-        net_card = QFrame()
-        net_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
-        n_layout = QGridLayout(net_card)
-        n_layout.setSpacing(10)
-        n_layout.addWidget(QLabel("Interface:"), 0, 0)
-        self.network_interface_label = QLabel()
-        n_layout.addWidget(self.network_interface_label, 0, 1)
-
-        n_layout.addWidget(QLabel("Link Speed:"), 1, 0)
-        self.network_speed_label = QLabel()
-        n_layout.addWidget(self.network_speed_label, 1, 1)
-
-        n_layout.addWidget(QLabel("Upload:"), 2, 0)
-        self.network_upload_label = QLabel()
-        n_layout.addWidget(self.network_upload_label, 2, 1)
-
-        n_layout.addWidget(QLabel("Download:"), 3, 0)
-        self.network_download_label = QLabel()
-        n_layout.addWidget(self.network_download_label, 3, 1)
-
-        n_layout.addWidget(QLabel("Usage:"), 4, 0)
-        self.network_usage_label = QLabel()
-        n_layout.addWidget(self.network_usage_label, 4, 1)
-
-        layout.addWidget(net_card)
-        widget.setLayout(layout)
-        return widget
+    # Detail tabs are provided by ui/tabs/* modules now.
 
     def update_system_info(self):
         # CPU
