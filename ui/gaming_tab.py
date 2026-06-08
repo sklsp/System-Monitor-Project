@@ -20,10 +20,6 @@ class GamingTab(QWidget):
         super().__init__()
         self._on_top_toggle = on_top_toggle
         self.ping_history: list[float] = []
-        # Apply compact modern styles for gaming overlay
-        self.setStyleSheet(
-            "background-color: transparent; color: #E6EEF3; font-family: 'Segoe UI', Arial;"
-        )
         self._build_ui()
 
     def _build_ui(self):
@@ -118,12 +114,12 @@ class GamingTab(QWidget):
         for index, (title, color, attr) in enumerate(specs):
             frame = QFrame()
             frame.setStyleSheet(
-                f"QFrame {{ background-color: #1f1f23; border: 1px solid rgba(255,255,255,0.03); border-radius: 10px; padding: 10px; }}"
+                "QFrame { background-color: #333; border: 1px solid #555; border-radius: 8px; }"
             )
             fl = QVBoxLayout(frame)
             fl.setContentsMargins(12, 10, 12, 10)
             heading = QLabel(title)
-            heading.setStyleSheet(f"color: {color}; font-weight: 700; font-size: 12px;")
+            heading.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 12px;")
             value = QLabel("—")
             value.setFont(QFont("Arial", 18, QFont.Bold))
             value.setAlignment(Qt.AlignCenter)
