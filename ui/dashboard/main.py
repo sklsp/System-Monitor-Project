@@ -7,7 +7,7 @@ import psutil
 from pathlib import Path
 
 # Ensure the project root is on sys.path so local packages can be imported
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
@@ -24,7 +24,7 @@ try:
         get_top_processes,
     )
 except ModuleNotFoundError:
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parents[2]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     from monitoring.net import get_active_network_interface, get_interface_speed
@@ -42,8 +42,6 @@ except ModuleNotFoundError:
 try:
     import GPUtil
 except Exception:
-    # If GPUtil can't be imported for any reason (missing dependency like
-    # distutils), treat it as unavailable and fall back to nvidia-smi.
     GPUtil = None
 
 try:
@@ -53,13 +51,15 @@ except ImportError:
     QT_CHARTS_AVAILABLE = False
 
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QProgressBar, QTabWidget, QPushButton, QScrollArea
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QProgressBar, QTabWidget, QPushButton, QScrollArea, QFrame
 )
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QFont, QPainter, QColor, QPen
 
 from ui.graphs import GraphWidget
 from ui.gaming_tab import GamingTab
+from ui.dashboard.overview import build_overview
+from ui.dashboard.details import build_details
 
 
 class SystemMonitor(QMainWindow):
@@ -145,10 +145,10 @@ class SystemMonitor(QMainWindow):
         self.gaming_tab = GamingTab(on_top_toggle=self.set_always_on_top)
         tabs.addTab(self.gaming_tab, "Gaming")
 
-        overview_widget = self.create_overview_tab()
+        overview_widget = build_overview(self)
         tabs.addTab(overview_widget, "Overview")
 
-        details_widget = self.create_details_tab()
+        details_widget = build_details(self)
         tabs.addTab(details_widget, "Details")
 
         main_layout.addWidget(tabs)
@@ -244,160 +244,13 @@ class SystemMonitor(QMainWindow):
                     self.details_tabs.setCurrentIndex(index)
                     break
 
-    def create_overview_tab(self):
-        from PyQt5.QtWidgets import QFrame
-
-        widget = QWidget()
-        layout = QGridLayout()
-        layout.setSpacing(12)
-        layout.setContentsMargins(6, 6, 6, 6)
-
-        # Overview card grid: show compact cards with metric, value and mini graph
-        cards = []
-
-        # CPU
-        from ui.graphs import MiniSparklineWidget
-
-        self.cpu_label = QLabel("0%")
-        self.cpu_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
-        self.cpu_trend = QLabel("")
-        self.cpu_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
-        cpu_card, self.cpu_chart_view, self.cpu_series = self.create_chart("CPU", "#4CAF50", fixed_max=100, compact=True)
-        cpu_top = QWidget()
-        cpu_top_layout = QHBoxLayout(cpu_top)
-        cpu_top_layout.setContentsMargins(0, 0, 0, 0)
-        cpu_top_layout.addWidget(self.cpu_label)
-        cpu_top_layout.addStretch()
-        cpu_top_layout.addWidget(self.cpu_trend)
-        cpu_card.layout().insertWidget(0, cpu_top)
-        self.cpu_mini = MiniSparklineWidget("#4CAF50")
-        cpu_card.layout().insertWidget(1, self.cpu_mini)
-        cpu_card.setMaximumHeight(110)
-        cpu_card.setMinimumWidth(260)
-        layout.addWidget(cpu_card, 0, 0)
-
-        # GPU
-        self.gpu_label = QLabel("N/A")
-        self.gpu_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
-        self.gpu_trend = QLabel("")
-        self.gpu_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
-        gpu_card, self.gpu_chart_view, self.gpu_series = self.create_chart("GPU", "#9C27B0", fixed_max=100, compact=True)
-        gpu_top = QWidget()
-        gpu_top_layout = QHBoxLayout(gpu_top)
-        gpu_top_layout.setContentsMargins(0, 0, 0, 0)
-        gpu_top_layout.addWidget(self.gpu_label)
-        gpu_top_layout.addStretch()
-        gpu_top_layout.addWidget(self.gpu_trend)
-        gpu_card.layout().insertWidget(0, gpu_top)
-        self.gpu_mini = MiniSparklineWidget("#9C27B0")
-        gpu_card.layout().insertWidget(1, self.gpu_mini)
-        gpu_card.setMaximumHeight(110)
-        gpu_card.setMinimumWidth(260)
-        layout.addWidget(gpu_card, 0, 1)
-
-        # RAM
-        self.memory_label = QLabel("0%")
-        self.memory_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
-        self.memory_trend = QLabel("")
-        self.memory_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
-        ram_card, self.memory_chart_view, self.memory_series = self.create_chart("RAM", "#2196F3", fixed_max=100, compact=True)
-        ram_top = QWidget()
-        ram_top_layout = QHBoxLayout(ram_top)
-        ram_top_layout.setContentsMargins(0, 0, 0, 0)
-        ram_top_layout.addWidget(self.memory_label)
-        ram_top_layout.addStretch()
-        ram_top_layout.addWidget(self.memory_trend)
-        ram_card.layout().insertWidget(0, ram_top)
-        self.memory_mini = MiniSparklineWidget("#2196F3")
-        ram_card.layout().insertWidget(1, self.memory_mini)
-        ram_card.setMaximumHeight(110)
-        ram_card.setMinimumWidth(260)
-        layout.addWidget(ram_card, 0, 2)
-
-        # Disk
-        self.disk_label = QLabel("0%")
-        self.disk_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
-        self.disk_trend = QLabel("")
-        self.disk_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
-        disk_card, self.disk_chart_view, self.disk_series = self.create_chart("Disk", "#FF9800", fixed_max=100, compact=True)
-        disk_top = QWidget()
-        disk_top_layout = QHBoxLayout(disk_top)
-        disk_top_layout.setContentsMargins(0, 0, 0, 0)
-        disk_top_layout.addWidget(self.disk_label)
-        disk_top_layout.addStretch()
-        disk_top_layout.addWidget(self.disk_trend)
-        disk_card.layout().insertWidget(0, disk_top)
-        self.disk_mini = MiniSparklineWidget("#FF9800")
-        disk_card.layout().insertWidget(1, self.disk_mini)
-        disk_card.setMaximumHeight(110)
-        disk_card.setMinimumWidth(260)
-        layout.addWidget(disk_card, 1, 0)
-
-        # Network
-        self.eth_label = QLabel("0%")
-        self.eth_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
-        self.eth_trend = QLabel("")
-        self.eth_trend.setStyleSheet(f"color: {self.ui_accent}; font-weight: 700;")
-        eth_card, self.eth_chart_view, self.eth_series = self.create_chart("Network", "#00BCD4", fixed_max=100, compact=True)
-        eth_top = QWidget()
-        eth_top_layout = QHBoxLayout(eth_top)
-        eth_top_layout.setContentsMargins(0, 0, 0, 0)
-        eth_top_layout.addWidget(self.eth_label)
-        eth_top_layout.addStretch()
-        eth_top_layout.addWidget(self.eth_trend)
-        eth_card.layout().insertWidget(0, eth_top)
-        self.eth_mini = MiniSparklineWidget("#00BCD4")
-        eth_card.layout().insertWidget(1, self.eth_mini)
-        eth_card.setMaximumHeight(110)
-        eth_card.setMinimumWidth(260)
-        layout.addWidget(eth_card, 1, 1)
-
-        # Processes small info card
-        proc_card = QFrame()
-        proc_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
-        proc_layout = QVBoxLayout(proc_card)
-        proc_title = QLabel("Processes")
-        proc_title.setStyleSheet(f"color: {self.ui_muted}; font-weight: 700;")
-        proc_layout.addWidget(proc_title)
-        self.process_label = QLabel("0")
-        self.process_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
-        proc_layout.addWidget(self.process_label)
-        proc_card.setMaximumHeight(110)
-        proc_card.setMinimumWidth(260)
-        layout.addWidget(proc_card, 1, 2)
-
-        widget.setLayout(layout)
-        return widget
-        
-    def create_details_tab(self):
-        widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setSpacing(10)
-        
-        details_tabs = QTabWidget()
-        self.details_tabs = details_tabs
-        details_tabs.setStyleSheet("""
-            QTabWidget::pane { border: 1px solid #555; }
-            QTabBar::tab { background-color: #3b3b3b; color: #fff; padding: 8px 20px; }
-            QTabBar::tab:selected { background-color: #555; }
-        """)
-        details_tabs.addTab(self.create_cpu_details_tab(), "CPU")
-        details_tabs.addTab(self.create_gpu_details_tab(), "GPU")
-        details_tabs.addTab(self.create_ram_details_tab(), "RAM")
-        details_tabs.addTab(self.create_disk_details_tab(), "Disk")
-        details_tabs.addTab(self.create_ethernet_details_tab(), "Ethernet")
-        
-        layout.addWidget(details_tabs)
-        widget.setLayout(layout)
-        return widget
-        
+    # The detailed tab builders remain methods used by build_details()
     def create_cpu_details_tab(self):
         widget = QWidget()
         main_layout = QVBoxLayout()
         main_layout.setSpacing(12)
 
         # Card wrapper for CPU info
-        from PyQt5.QtWidgets import QFrame
         cpu_card = QFrame()
         cpu_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
         cpu_layout = QVBoxLayout(cpu_card)
@@ -481,13 +334,12 @@ class SystemMonitor(QMainWindow):
 
         widget.setLayout(main_layout)
         return widget
-        
+
     def create_gpu_details_tab(self):
         widget = QWidget()
         layout = QVBoxLayout()
         layout.setSpacing(10)
 
-        from PyQt5.QtWidgets import QFrame
         gpu_card = QFrame()
         gpu_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
         g_layout = QGridLayout(gpu_card)
@@ -543,12 +395,11 @@ class SystemMonitor(QMainWindow):
         layout.addWidget(gpu_card)
         widget.setLayout(layout)
         return widget
-        
+
     def create_ram_details_tab(self):
         widget = QWidget()
         layout = QVBoxLayout()
         layout.setSpacing(10)
-        from PyQt5.QtWidgets import QFrame
         ram_card = QFrame()
         ram_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
         r_layout = QGridLayout(ram_card)
@@ -580,12 +431,11 @@ class SystemMonitor(QMainWindow):
         layout.addWidget(ram_card)
         widget.setLayout(layout)
         return widget
-        
+
     def create_disk_details_tab(self):
         widget = QWidget()
         layout = QVBoxLayout()
         layout.setSpacing(10)
-        from PyQt5.QtWidgets import QFrame
         disk_card = QFrame()
         disk_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
         d_layout = QGridLayout(disk_card)
@@ -617,12 +467,11 @@ class SystemMonitor(QMainWindow):
         layout.addWidget(disk_card)
         widget.setLayout(layout)
         return widget
-        
+
     def create_ethernet_details_tab(self):
         widget = QWidget()
         layout = QVBoxLayout()
         layout.setSpacing(10)
-        from PyQt5.QtWidgets import QFrame
         net_card = QFrame()
         net_card.setStyleSheet(f"QFrame {{ background-color: {self.ui_panel}; border-radius: 10px; padding: 12px; }}")
         n_layout = QGridLayout(net_card)
@@ -650,7 +499,7 @@ class SystemMonitor(QMainWindow):
         layout.addWidget(net_card)
         widget.setLayout(layout)
         return widget
-        
+
     def update_system_info(self):
         # CPU
         self.slow_update_counter += 1
@@ -991,7 +840,6 @@ class SystemMonitor(QMainWindow):
                     # Use first GPU only for UI
                     row = next(reader, None)
                     if row and len(row) >= 11:
-                        # Map fields from nvidia-smi
                         name = row[0].strip()
                         driver = row[1].strip()
                         try:
@@ -1024,7 +872,6 @@ class SystemMonitor(QMainWindow):
 
                         gpu_load = load
                         gpu_mem = None
-                        # parse memory values (may be integers)
                         try:
                             mem_used_val = float(mem_used)
                             mem_total_val = float(mem_total)
@@ -1033,14 +880,12 @@ class SystemMonitor(QMainWindow):
                             mem_used_val = None
                             mem_total_val = None
 
-                        # Determine throttling heuristics
                         throttle = "No"
                         if temp is not None and temp >= 90:
                             throttle = "Yes (thermal)"
                         elif power_limit is not None and power_draw is not None and power_draw >= power_limit * 0.98:
                             throttle = "Yes (power)"
 
-                        # Update UI labels
                         self.gpu_label.setText(f"{gpu_load:.0f}%")
                         if hasattr(self, 'gpu_bar'):
                             self.gpu_bar.setValue(int(gpu_load))
@@ -1236,4 +1081,3 @@ class SystemMonitor(QMainWindow):
                 "top_processes": self.last_top_processes,
             }
         )
-
