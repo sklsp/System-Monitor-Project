@@ -72,7 +72,7 @@ class SystemMonitor(QMainWindow):
         self.setGeometry(100, 100, 1200, 780)
 
         # Theme and palette
-        self.ui_accent = "#7DD3FC"  # subtle cyan accent
+        self.ui_accent = "#7DD3FC"  
         self.ui_warning = "#FFB86B"
         self.ui_bg = "#141416"
         self.ui_panel = "#1f1f23"
