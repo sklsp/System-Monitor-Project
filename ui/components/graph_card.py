@@ -15,10 +15,11 @@ def create_chart(monitor, title, color, fixed_max=None, compact=False):
 
     if compact:
         spark = MiniSparklineWidget(color)
-        spark.setMinimumHeight(20)
-        spark.setMaximumHeight(36)
+        spark.setMinimumHeight(36)
+        spark.setMaximumHeight(64)
         layout.addWidget(spark)
-        container.setMinimumWidth(140)
+        # allow card to expand horizontally while keeping compact vertical footprint
+        container.setMinimumWidth(160)
         return container, spark, None
     else:
         graph_widget = GraphWidget(color, fixed_max=fixed_max)

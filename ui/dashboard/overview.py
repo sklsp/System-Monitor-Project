@@ -6,6 +6,9 @@ def build_overview(self):
     from ui.graphs import MiniSparklineWidget
 
     widget = QWidget()
+    # constrain the overview height so it doesn't expand the scroll area excessively
+    widget.setMinimumHeight(140)
+    widget.setMaximumHeight(340)
     layout = QGridLayout()
     layout.setSpacing(6)
     layout.setHorizontalSpacing(8)
@@ -38,8 +41,8 @@ def build_overview(self):
     self.cpu_mini.setMinimumHeight(28)
     cpu_card.layout().insertWidget(1, self.cpu_mini)
     cpu_card.setMinimumWidth(160)
-    cpu_card.setMaximumWidth(240)
-    cpu_card.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
+    cpu_card.setMaximumHeight(140)
+    cpu_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     layout.addWidget(cpu_card, 0, 0)
 
     # GPU
@@ -60,8 +63,8 @@ def build_overview(self):
     self.gpu_mini.setMinimumHeight(28)
     gpu_card.layout().insertWidget(1, self.gpu_mini)
     gpu_card.setMinimumWidth(160)
-    gpu_card.setMaximumWidth(240)
-    gpu_card.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
+    gpu_card.setMaximumHeight(140)
+    gpu_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     layout.addWidget(gpu_card, 0, 1)
 
     # RAM
@@ -82,8 +85,8 @@ def build_overview(self):
     self.memory_mini.setMinimumHeight(28)
     ram_card.layout().insertWidget(1, self.memory_mini)
     ram_card.setMinimumWidth(160)
-    ram_card.setMaximumWidth(240)
-    ram_card.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
+    ram_card.setMaximumHeight(140)
+    ram_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     layout.addWidget(ram_card, 0, 2)
 
     # Disk
@@ -104,8 +107,8 @@ def build_overview(self):
     self.disk_mini.setMinimumHeight(28)
     disk_card.layout().insertWidget(1, self.disk_mini)
     disk_card.setMinimumWidth(160)
-    disk_card.setMaximumWidth(240)
-    disk_card.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
+    disk_card.setMaximumHeight(140)
+    disk_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     layout.addWidget(disk_card, 1, 0)
 
     # Network
@@ -126,8 +129,8 @@ def build_overview(self):
     self.eth_mini.setMinimumHeight(28)
     eth_card.layout().insertWidget(1, self.eth_mini)
     eth_card.setMinimumWidth(160)
-    eth_card.setMaximumWidth(240)
-    eth_card.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
+    eth_card.setMaximumHeight(140)
+    eth_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     layout.addWidget(eth_card, 1, 1)
 
     # Processes small info card
@@ -141,8 +144,8 @@ def build_overview(self):
     self.process_label.setFont(QFont("Segoe UI", 13, QFont.Bold))
     proc_layout.addWidget(self.process_label)
     proc_card.setMinimumWidth(160)
-    proc_card.setMaximumWidth(240)
-    proc_card.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
+    proc_card.setMaximumHeight(140)
+    proc_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     layout.addWidget(proc_card, 1, 2)
 
     widget.setLayout(layout)
