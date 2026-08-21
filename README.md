@@ -1,4 +1,4 @@
-# 🖥️ System Monitor Dashboard
+#  System Monitor Dashboard
 
 A real-time system monitoring dashboard built with Python and PyQt5.
 
@@ -8,32 +8,32 @@ This application displays live hardware statistics such as CPU, RAM, disk usage,
 
 ---
 
-## ✨ Features
+##  Features
 
-### 🖥️ CPU
+###  CPU
 - CPU load
 - Core usage
 - Clock frequency
 
-### 🧠 Memory (RAM)
+###  Memory (RAM)
 - RAM usage
 - Total / used / available memory
 - Swap usage
 
-### 💾 Disk
+###  Disk
 - Read / write activity
 - Total / used / free storage
 
-### 🎮 GPU
+###  GPU
 - GPU load
 - VRAM usage
 - GPU name
 
-### 🌐 Network
+###  Network
 - Upload / download activity
 - Ethernet link speed
 
-### 🎮 Gaming (tab)
+###  Gaming (tab)
 - Actief venster / game-detectie (IN GAME / DESKTOP)
 - Live CPU, GPU, RAM, VRAM en ping
 - Bottleneck-analyse (CPU/GPU/RAM-bound)
@@ -43,7 +43,7 @@ This application displays live hardware statistics such as CPU, RAM, disk usage,
 - Top processen op CPU
 - Altijd-bovenaan overlay-modus
 
-### ⚙️ System
+###  System
 - Active processes list
 - Real-time updates
 - Basic performance graphs
@@ -51,7 +51,7 @@ This application displays live hardware statistics such as CPU, RAM, disk usage,
 
 ---
 
-## 🚀 Planned Features
+##  Planned Features
 
 - Fan speed tracking
 - FPS overlay for gaming (in-game hook)
@@ -71,7 +71,7 @@ This application displays live hardware statistics such as CPU, RAM, disk usage,
 
 ---
 
-## 🛠️ Built With
+##  Built With
 
 - Python 3.x
 - PyQt5
@@ -81,7 +81,7 @@ This application displays live hardware statistics such as CPU, RAM, disk usage,
 - Matplotlib
 ---
 
-## ⚙️ Installation (beginner-friendly)
+##  Installation (beginner-friendly)
 
 You do **not** need to be a programmer. If you can install a normal program and copy a few commands, you can run this app.
 
@@ -220,7 +220,7 @@ To close the app, close the window or press **Ctrl+C** in the terminal.
 
 ---
 
-## 🚀 Running the app again later
+##  Running the app again later
 
 **Easy:** double-click **`start.bat`** again.
 
@@ -228,7 +228,7 @@ To close the app, close the window or press **Ctrl+C** in the terminal.
 
 ---
 
-## 🩹 Something went wrong?
+##  Something went wrong?
 
 | Problem | What to try |
 |---------|-------------|
@@ -243,7 +243,7 @@ Still stuck? Copy the **full red error text** from PowerShell when asking for he
 
 ---
 
-## 🧪 Headless test (optional, for developers)
+##  Headless test (optional, for developers)
 
 You can skip this unless someone asked you to test without a window:
 
@@ -253,7 +253,7 @@ python tests\run_headless.py
 ```
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 System-Monitor-Project/
@@ -280,7 +280,7 @@ System-Monitor-Project/
 
 ---
 
-## ⚠️ Notes
+##  Notes
 
 - This project is still under active development
 - Some features are experimental or incomplete
@@ -289,12 +289,12 @@ System-Monitor-Project/
 
 ---
 
-## 👨‍💻 Author
+##  Author
 
 Made by **sklsp**
 
 ---
 
-## 🎯 Future Vision
+##  Future Vision
 
 This project is being developed into a lightweight, gaming-focused system monitor similar to tools like MSI Afterburner, but with a modern Python-based GUI.
