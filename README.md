@@ -1,5 +1,7 @@
 # System Monitor Dashboard
 
+[![CI](https://github.com/sklsp/System-Monitor-Project/actions/workflows/ci.yml/badge.svg)](https://github.com/sklsp/System-Monitor-Project/actions/workflows/ci.yml)
+
 A real-time system monitoring dashboard for Windows, built with Python and PyQt5. It shows live CPU, RAM, disk, GPU and network statistics in a desktop window, plus a dedicated gaming tab that tracks the game you are playing.
 
 ## What it does
@@ -33,11 +35,18 @@ python main.py
 
 ## Tests
 
-No pytest suite; two headless smoke scripts that run the real app offscreen:
+```powershell
+pip install pytest
+python -m pytest -q   # 2 tests: the real dashboard, offscreen
+```
+
+`tests/test_dashboard.py` boots the dashboard, runs its update timers for 3 seconds and fails on any exception raised inside the app (PyQt reports those through `sys.excepthook`, which the test captures). It also checks that every overview card is built. CI runs the tests on Windows on every push.
+
+Two manual probes remain for poking at the layout:
 
 ```powershell
 $env:QT_QPA_PLATFORM="offscreen"
-python tests\run_headless.py          # boots the dashboard for 3 seconds, exits clean
+python tests\run_headless.py          # boots the dashboard for 3 seconds
 python tests\overview_layout_test.py  # resizes the window and prints card dimensions
 ```
 
